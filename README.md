@@ -38,7 +38,7 @@ Connect the components as shown in the schematic:
 
 Final assembly complete with Econet plug ready for use:
 
-![Hardware schematic](docs/hardware.jpg)
+![Final assy](docs/hardware.jpg)
 
 ## Firmware Installation
 
