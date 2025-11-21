@@ -46,12 +46,22 @@ export type WifiApSettings = {
   enabled: boolean;
 };
 
-export type EconetSettings = {
-  remote_station_id: string;
-  this_station_id: string;
-  server_ip: string;
-  server_port: string;
+export interface ECSRow {
+  station_id: number;
+  udp_port: number;
 };
+
+export interface AUNRow {
+  remote_ip: string;
+  udp_port: number;
+  station_id: number;
+};
+
+export type EconetSettings = {
+  econetStations: ECSRow[];
+  aunStations: AUNRow[];
+};
+
 
 export type StatsStreamPayload = {
   aunbridge_stats?: Partial<AunbridgeStats>;

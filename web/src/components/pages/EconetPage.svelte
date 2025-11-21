@@ -2,19 +2,15 @@
   import { onMount } from "svelte";
   import { sendWsRequest } from "../../lib/ws";
   import { connectionState } from "../../lib/stores";
+  import EditableTable, {
+    type ColumnDef,
+  } from "../layout/EditableTable.svelte";
 
-  type EconetSettings = {
-    remote_station_id: number;
-    this_station_id: number;
-    server_ip: string;
-    server_port: number;
-  };
+  import type {EconetSettings, AUNRow, ECSRow} from "../../lib/types"
 
   let econetSettings: EconetSettings = {
-    remote_station_id: 0,
-    this_station_id: 0,
-    server_ip: "",
-    server_port: 0
+    econetStations: [],
+    aunStations: [],
   };
 
   let loading = true;
@@ -25,6 +21,25 @@
 
   $: isConnected = $connectionState === "connected";
   $: formDisabled = loading || saving || !isConnected;
+
+  const ecsColumns: ColumnDef<ECSRow>[] = [
+    { label: "Station ID", key: "station_id", type: "number" },
+    { label: "Local UDP port", key: "udp_port", type: "number" },
+  ];
+
+  function ecsOnChange(newRows: ECSRow[]) {
+    econetSettings.econetStations = newRows;
+  }
+
+  const aunColumns: ColumnDef<AUNRow>[] = [
+    { label: "Remote IP Address", key: "remote_ip", type: "string" },
+    { label: "Remote UDP port", key: "udp_port", type: "number" },
+    { label: "Station ID", key: "station_id", type: "number" },
+  ];
+
+  function aunOnChange(newRows: AUNRow[]) {
+    econetSettings.aunStations = newRows;
+  }
 
   // Load econet settings when page is shown
   onMount(async () => {
@@ -74,67 +89,57 @@
   }
 </script>
 
+{#if loading}
+  <p class="text-xs text-gray-500">Loading current settings…</p>
+{/if}
+
+{#if loadError}
+  <p class="text-xs text-red-600">{loadError}</p>
+{/if}
+
 <section class="bg-white rounded-lg shadow-sm p-4 space-y-4 max-w-md">
-  <h2 class="text-sm font-semibold mb-1">Econet settings</h2>
+  <h2 class="text-sm font-semibold mb-1">Econet Stations List</h2>
 
-  {#if loading}
-    <p class="text-xs text-gray-500">Loading current settings…</p>
-  {/if}
-
-  {#if loadError}
-    <p class="text-xs text-red-600">{loadError}</p>
-  {/if}
+  <p>
+    Add stations to this list that are physically present on the Econet network.
+    They will be accessable from the IP network at the given UDP port.
+  </p>
 
   <div class="space-y-2 text-sm opacity-{formDisabled ? 50 : 100}">
-    <label class="block">
-      <span class="text-xs text-gray-600">
-        Remote Station ID (ID of connected BBC Micro)
-      </span>
-      <input
-        class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-sky-500 focus:ring-sky-500"
-        type="number" step="1" min="1" max="254"
-        bind:value={econetSettings.remote_station_id}
-        disabled={formDisabled}
-      />
-    </label>
+    <EditableTable
+      columns={ecsColumns}
+      rows={econetSettings.econetStations}
+      onChange={ecsOnChange}
+    />
 
-    <label class="block">
-      <span class="text-xs text-gray-600">This Station ID</span>
-      <input
-        class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-sky-500 focus:ring-sky-500"
-        type="number" step="1" min="1" max="254"
-        bind:value={econetSettings.this_station_id}
-        disabled={formDisabled}
-      />
-    </label>
-
-    <label class="block">
-      <span class="text-xs text-gray-600">Server IP</span>
-      <input
-        class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-sky-500 focus:ring-sky-500"
-        type="text"
-        bind:value={econetSettings.server_ip}
-        disabled={formDisabled}
-      />
-    </label>
-
-    <label class="block">
-      <span class="text-xs text-gray-600">Server port</span>
-      <input
-        class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-sky-500 focus:ring-sky-500"
-        type="number" step="1" min="1" max="65535"
-        bind:value={econetSettings.server_port}
-        disabled={formDisabled}
-      />
-    </label>
+    <button
+      class="px-3 py-1.5 text-xs rounded-md bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
+      on:click={saveEconet}
+      disabled={formDisabled}
+    >
+      {#if saving}
+        Saving...
+      {:else}
+        Save and activate
+      {/if}
+    </button>
   </div>
+</section>
 
-  <div class="flex items-center justify-between pt-2 gap-2">
-    {#if saveStatus === "success"}
-      <span class="text-xs text-emerald-600">Saved successfully.</span>
-    {:else if saveStatus === "error"}
-      <span class="text-xs text-red-600">{saveError}</span>
-    {/if}
+<section class="bg-white rounded-lg shadow-sm p-4 space-y-4 max-w-md">
+  <h2 class="text-sm font-semibold mb-1">AUN Stations List</h2>
+
+  <p>
+    Add AUN addresses to this list. They will be made accessible on the Econet
+    network at the station address given.
+  </p>
+
+  <div class="space-y-2 text-sm opacity-{formDisabled ? 50 : 100}">
+    <EditableTable
+      columns={aunColumns}
+      rows={econetSettings.aunStations}
+      onChange={aunOnChange}
+    />
 
     <button
       class="px-3 py-1.5 text-xs rounded-md bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"

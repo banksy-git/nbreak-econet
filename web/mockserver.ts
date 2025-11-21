@@ -114,10 +114,8 @@ export function mockWsPlugin(): PluginOption {
   
             let ssp: ServerMessage = {
               type: "stats_stream",
-              payload: {
-                aunbridge_stats: aun,
-                econet_stats: eco,
-              },
+              aunbridge_stats: aun,
+              econet_stats: eco,
             };
             ws.send(JSON.stringify(ssp));
           }, 1000);
@@ -126,7 +124,7 @@ export function mockWsPlugin(): PluginOption {
             ws.send(
               JSON.stringify({
                 type: "log",
-                line: `[mock] ${new Date().toLocaleTimeString()} – simulated log entry`,
+                line: `[mock] ${new Date().toLocaleTimeString()} - simulated log entry`,
               })
             );
           }, 3000);
@@ -156,6 +154,12 @@ export function mockWsPlugin(): PluginOption {
             }
   
             if (msg.type == "save_econet") {
+              msg.settings.econetStations.forEach(n=>{
+                console.log(`ECO Station ${n.station_id}`);
+              })
+              msg.settings.aunStations.forEach(n=>{
+                console.log(`AUN Station ${n.remote_ip}`);
+              })
               let response: ServerMessage = {
                 type: "response",
                 id: msg.id,
@@ -170,10 +174,9 @@ export function mockWsPlugin(): PluginOption {
                 id: msg.id,
                 ok: true,
                 settings: {
-                  remote_station_id: "127",
-                  this_station_id: "254",
-                  server_ip: "192.168.0.10",
-                  server_port: "32768",
+                  econetStations: [{station_id: 127, udp_port: 32768}, {station_id: 88, udp_port: 32769}],
+                  aunStations: [{station_id: 254, remote_ip: "10.222.8.8", udp_port: 32768}],
+
                 },
               };
               ws.send(JSON.stringify(response));
