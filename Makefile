@@ -6,6 +6,9 @@ buildidf:
 flash:
 	idf.py flash -p ${SERIALPORT}
 
+erase:
+	idf.py erase-flash -p ${SERIALPORT}
+
 monflash:
 	idf.py flash monitor -p ${SERIALPORT}
 
