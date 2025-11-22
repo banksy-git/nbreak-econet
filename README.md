@@ -40,18 +40,38 @@ Final assembly complete with Econet plug ready for use:
 
 ![Final assy](docs/hardware.jpg)
 
-## Firmware Installation
+## Upload the firmware to your ESP32
 
-Firmware is built and flashed using **idf.py** with the ESP-IDF toolchain.
+Connect your ESP32 via USB (left socket) and identify the serial 
+port your computer assigned it.
 
-1. Install ESP-IDF:
-   <a href="https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html" target="_blank" rel="noopener noreferrer">https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html</a>
+Download the release zip you want to install from the releases on this page.
 
-2. Build and flash the firmware:
+esptool running in Python 3 is used to upload the firmware. Adjust 
+these steps for your envrionment as nescessary.
 
-   ```shell
-   idf.py flash
-   ```
+```shell
+# Create an empty directory for hosting esptool
+mkdir nbreak-tmp
+cd nbreak-tmp
+
+# Create virtual environment and install esptool inside of it
+python -mvenv venv --prompt nbreak-flash
+source venv/bin/activate
+pip install esptool
+
+# Unzip the firmware release bundle
+unzip /path/to/nbreak-firmware-xxx.zip
+cd dist/
+
+# Flash it - NOTE: CHANGE /dev/ttyXXX to the serial port your ESP32 is on!
+python -m esptool --port /dev/ttyXXX --chip esp32c6 -b 460800 --before default_reset --after hard_reset write_flash "@flash_args"
+
+# Clean up
+deactivate
+cd ../../
+rm -rf nbreak-tmp
+```
 
 ## Device Configuration and monitoring
 
@@ -83,5 +103,18 @@ You can use aund as your Econet fileserver:
     https://github.com/sai2791/aund/
 
 Example configuration files are included in the contrib/ directory.
+
+## Building the firmware yourself
+
+Firmware is built and flashed using **idf.py** with the ESP-IDF toolchain.
+
+1. Install ESP-IDF:
+   <a href="https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html" target="_blank" rel="noopener noreferrer">https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html</a>
+
+2. Build and flash the firmware:
+
+   ```shell
+   idf.py flash
+   ```
 
 ## Enjoy!

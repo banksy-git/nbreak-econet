@@ -1,6 +1,6 @@
 
 build:
-	pnpm build --emptyOutDir
+	pnpm build
 	
 dev:
 	pnpm dev

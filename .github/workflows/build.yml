@@ -1,0 +1,79 @@
+name: N-Break Firmware
+
+on:
+  push:
+    tags:
+      - 'v*'   # e.g. v1.2.3
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      IDF_PATH: ${{ github.workspace }}/esp-idf
+      IDF_TARGET: esp32-c6
+      WEB_DIR: web
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        working-directory: ${{ env.WEB_DIR }}
+        run: pnpm install
+
+      - name: Build web UI
+        working-directory: ${{ env.WEB_DIR }}
+        run: pnpm build
+
+      - name: esp-idf build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5
+          target: esp32c6
+
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nbreak-firmware
+          path: |
+            build/*.bin
+            build/*.elf
+            build/*.map
+            build/flash_args
+            build/bootloader/*.bin
+            build/partition_table/*.bin
+
+  release:
+    permissions: write-all
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nbreak-firmware
+          path: dist
+
+      - name: Create release zip
+        run: |
+          ls -R dist
+          zip -r nbreak-firmware-${{ github.ref_name }}.zip dist/*
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            nbreak-firmware-${{ github.ref_name }}.zip
