@@ -1,4 +1,4 @@
-# N-Break — Econet-over-WiFi (AUN) Bridge
+# N-Break — Econet-over-WiFi (AUN) Gateway
 
 ## Overview
 
