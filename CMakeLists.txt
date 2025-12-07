@@ -37,7 +37,8 @@ if (WEB_BUILD)
     endif()
 
     add_custom_target(build_web ALL
-        COMMAND pnpm install; pnpm build
+        COMMAND pnpm install
+	COMMAND pnpm build
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/web
     )
     add_dependencies(littlefs_rootfs_bin build_web)
