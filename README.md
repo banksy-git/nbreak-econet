@@ -8,6 +8,14 @@ communicate with an AUN fileserver (or other device) over a modern IP network.
 It recreates the classic Econet experience using inexpensive, readily
 available hardware - no custom PCBs or extensive soldering required.
 
+### Thanks
+
+A number of folks over at https://stardot.org.uk/ have helped with the testing
+this software; as well as providing insights into the inner workings of these
+protocols, without which the development would have taken much longer.
+Special mentions to @IanJeffray and @radiofan for enthusiastically jumping in
+and building and testing their own versions of the hardware. 
+
 ## Hardware Requirements
 
 To build the interface, you will need:
@@ -121,7 +129,18 @@ DMA scheduling, FIFO loading and start/stop control of the peripheral.
 1. Install ESP-IDF:
    <a href="https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html" target="_blank" rel="noopener noreferrer">https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html</a>
 
-2. Build and flash the firmware:
+2. Install PNPM and NodeJS - this is used to build the web front end.
+   <a href="https://pnpm.io/installation">https://pnpm.io/installation</a>
+
+   Adapt these steps for your environment:
+
+   ```shell
+   curl -fsSL https://get.pnpm.io/install.sh | bash -
+   source ~/.bashrc
+   pnpm env use -g 22
+   ```
+
+3. Build and flash the firmware:
 
    ```shell
    idf.py flash

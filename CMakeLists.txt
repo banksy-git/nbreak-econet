@@ -24,18 +24,20 @@ if (WEB_BUILD)
 =================================================
   Building the Web Interface requires pnpm and 
   NodeJS. WEB_BUILD=ON but pnpm was not found.
-  
-  You can either:
-    * Install NodeJS >=22 and pnpm and build the web interface locally or;
-    * Run the build with -DWEB_BUILD=OFF and use the pre-built web
-      interface from the git release corresponding to this source 
-      tree. If you do that, unzip it into rootfs.
+
+  Install NodeJS >=22 and pnpm and build the web interface locally.
+
+  Note:
+    * PNPM can be installed from https://pnpm.io/
+    * After installing, activate a NodeJS environment with:
+      pnpm env use -g 22
+
 =================================================
 ")
     endif()
 
     add_custom_target(build_web ALL
-        COMMAND pnpm build
+        COMMAND pnpm install; pnpm build
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/web
     )
     add_dependencies(littlefs_rootfs_bin build_web)
