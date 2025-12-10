@@ -23,6 +23,9 @@
 #define ECONET_PRIVATE_API
 #include "econet.h"
 
+#define ECONET_PARLIO_WIDTH 2
+#define ECONET_FLAGSTREAM_PADDING 2
+
 typedef struct
 {
     uint8_t *bits;
@@ -33,24 +36,24 @@ typedef struct
     uint8_t c;
 } tx_bitstuff_ctx;
 
-TaskHandle_t tx_task = NULL;
+TaskHandle_t DRAM_ATTR tx_task = NULL;
 QueueHandle_t DRAM_ATTR tx_command_queue;
 volatile bool DRAM_ATTR tx_is_in_progress;
 
-static parlio_tx_unit_handle_t tx_unit;
-static TaskHandle_t tx_sender_task = NULL;
-static bool tx_sent_ack;
+static parlio_tx_unit_handle_t DRAM_ATTR tx_unit;
+static TaskHandle_t DRAM_ATTR tx_sender_task = NULL;
+static bool DRAM_ATTR tx_sent_ack;
 
 // Outgoing frame
-static uint8_t DRAM_ATTR tx_flag_stream[8];
-static uint32_t tx_flag_stream_length;
-static size_t scout_bits_len;
-static uint8_t DRAM_ATTR scout_bits[512];
-static uint8_t tx_bits[16384];
-static size_t tx_bits_len;
+static uint8_t DRAM_ATTR tx_flag_stream[ECONET_FLAGSTREAM_PADDING * ECONET_PARLIO_WIDTH];
+static uint32_t DRAM_ATTR tx_flag_stream_length;
+static size_t DRAM_ATTR scout_bits_len;
+static uint8_t DRAM_ATTR scout_bits[32 * ECONET_PARLIO_WIDTH];
+static uint8_t DRAM_ATTR tx_bits[ECONET_MTU * ECONET_PARLIO_WIDTH];
+static size_t DRAM_ATTR tx_bits_len;
 
 // Custom ParlIO driver
-static volatile bool is_flagstream_queued;
+static volatile bool DRAM_ATTR is_flagstream_queued;
 void parlio_tx_neg_edge(parlio_tx_unit_handle_t tx_unit);
 void parlio_tx_go(parlio_tx_unit_handle_t tx_unit);
 esp_err_t parlio_tx_unit_pretransmit(parlio_tx_unit_handle_t tx_unit, const void *payload, size_t payload_bits, const parlio_transmit_config_t *config);
@@ -95,9 +98,8 @@ static inline uint16_t IRAM_ATTR crc16_x25(const uint8_t *data, size_t len)
 
 static inline void IRAM_ATTR _add_raw_bit(tx_bitstuff_ctx *ctx, uint8_t b)
 {
-    const int shift_width = 4;
-    ctx->c = ctx->c << shift_width | b;
-    ctx->bit_pos += shift_width;
+    ctx->c = ctx->c << ECONET_PARLIO_WIDTH | b;
+    ctx->bit_pos += ECONET_PARLIO_WIDTH;
     if (ctx->bit_pos >= 8)
     {
         if (ctx->byte_pos < ctx->bits_size)
@@ -213,6 +215,7 @@ size_t IRAM_ATTR _generate_flag_stream(uint8_t *bits, size_t bits_size, int numb
 
 static void IRAM_ATTR _transmit_bits(const uint8_t *bits, size_t length)
 {
+    econet_tx_pre_go();
     parlio_transmit_config_t transmit_config = {
         .idle_value = 0x0,
     };
@@ -262,7 +265,6 @@ static void IRAM_ATTR _tx_task(void *params)
         }
 
         is_data_ready = false;
-        econet_tx_pre_go();
 
         // Send scout
         _transmit_bits(scout_bits, scout_bits_len);
@@ -319,7 +321,7 @@ bool econet_send(uint8_t *data, uint16_t length)
     // Generate scout frame
     scout_bits_len = _generate_frame_bits(scout_bits, sizeof(scout_bits), data, 6);
 
-    // Generate payload frame (TODO: Re-const data and make frame builder)
+    // Generate payload frame
     data[5] = data[3];
     data[4] = data[2];
     data[3] = data[1];
@@ -327,18 +329,20 @@ bool econet_send(uint8_t *data, uint16_t length)
     tx_bits_len = _generate_frame_bits(tx_bits, sizeof(tx_bits), &data[2], length - 2);
 
     // Notify sender task
-    econet_tx_command_t cmd = {
-        .cmd = 'S'};
+    econet_tx_command_t cmd = {.cmd = 'S'};
     if (xQueueSend(tx_command_queue, &cmd, 1000) != pdTRUE)
     {
         ESP_LOGE(TAG, "Failed to post econet send command. This is a bug.");
+        return false;
     }
 
     // Wait for send completion (Full 4-way ACK or NACK)
-    if (ulTaskNotifyTake(pdTRUE, 1000) != pdTRUE)
+    if (ulTaskNotifyTake(pdTRUE, 2000) != pdTRUE)
     {
-        ESP_LOGE(TAG, "Timeout waiting for send. This is a bug.");
+        ESP_LOGE(TAG, "Timeout waiting for send. Missing clock?");
+        return false;
     };
+
     return tx_sent_ack;
 }
 
@@ -346,7 +350,7 @@ void econet_tx_setup(void)
 {
     parlio_tx_unit_config_t tx_config = {
         .clk_src = PARLIO_CLK_SRC_EXTERNAL,
-        .data_width = 4,
+        .data_width = ECONET_PARLIO_WIDTH,
         .clk_in_gpio_num = econet_cfg.clk_pin,
         .input_clk_src_freq_hz = econet_cfg.clk_freq_hz,
         .valid_gpio_num = -1,
@@ -363,7 +367,7 @@ void econet_tx_setup(void)
         },
         .output_clk_freq_hz = econet_cfg.clk_freq_hz,
         .trans_queue_depth = 4,
-        .max_transfer_size = 16384,
+        .max_transfer_size = sizeof(tx_bits),
         .sample_edge = PARLIO_SAMPLE_EDGE_NEG,
         .bit_pack_order = PARLIO_BIT_PACK_ORDER_MSB,
     };
@@ -378,7 +382,7 @@ void econet_tx_setup(void)
     tx_command_queue = xQueueCreate(8, sizeof(econet_tx_command_t));
 
     // Pre-calculate flag bitstream
-    tx_flag_stream_length = _generate_flag_stream(tx_flag_stream, sizeof(tx_flag_stream), 2);
+    tx_flag_stream_length = _generate_flag_stream(tx_flag_stream, sizeof(tx_flag_stream), ECONET_FLAGSTREAM_PADDING);
     if (tx_flag_stream_length == 0)
     {
         ESP_LOGE(TAG, "Insufficient buffer for flag stream!");

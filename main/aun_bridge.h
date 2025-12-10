@@ -14,9 +14,12 @@
 
 #include <stdint.h>
 
+#define AUN_TYPE_BROADCAST 0x01
 #define AUN_TYPE_DATA 0x02
 #define AUN_TYPE_ACK 0x03
 #define AUN_TYPE_NACK 0x04
+#define AUN_TYPE_IMM 0x05
+#define AUN_TYPE_IMM_REPLY 0x06
 
 typedef struct
 {
@@ -35,6 +38,7 @@ typedef struct
     uint32_t tx_error_count;
     uint32_t tx_ack_count;
     uint32_t tx_nack_count;
+    uint32_t rx_imm_count;
     uint32_t rx_data_count;
     uint32_t rx_ack_count;
     uint32_t rx_nack_count;

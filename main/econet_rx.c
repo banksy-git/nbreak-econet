@@ -33,7 +33,7 @@ static uint8_t DRAM_ATTR _raw_shift_in;
 static uint8_t DRAM_ATTR _recv_data_shift_in;
 static uint32_t DRAM_ATTR _recv_data_bit;
 static uint32_t DRAM_ATTR is_frame_active;
-static uint8_t DRAM_ATTR rx_bytes[2048];
+static uint8_t DRAM_ATTR rx_bytes[ECONET_MTU];
 static uint16_t DRAM_ATTR rx_frame_len;
 static uint16_t DRAM_ATTR rx_crc;
 static uint8_t DRAM_ATTR rx_idle_one_counter;
@@ -285,7 +285,7 @@ void econet_rx_setup(void)
     };
     ESP_ERROR_CHECK(parlio_rx_unit_register_event_callbacks(rx_unit, &cbs, NULL));
 
-    econet_rx_frame_buffer = xMessageBufferCreate(4096);
+    econet_rx_frame_buffer = xMessageBufferCreate(ECONET_MTU);
 }
 
 void econet_rx_start(void)
@@ -298,12 +298,12 @@ void econet_rx_start(void)
             .partial_rx_en = true,
         }};
 
-    for (int i=0;i<sizeof(rx_payload_dma_buffer);i++) {
-        ESP_ERROR_CHECK(parlio_rx_unit_receive(rx_unit, &rx_payload_dma_buffer[i], 1 , &rx_cfg));
+    for (int i = 0; i < sizeof(rx_payload_dma_buffer); i++)
+    {
+        ESP_ERROR_CHECK(parlio_rx_unit_receive(rx_unit, &rx_payload_dma_buffer[i], 1, &rx_cfg));
     }
 
     ESP_ERROR_CHECK(parlio_rx_soft_delimiter_start_stop(rx_unit, rx_delimiter, true));
-
 }
 
 void econet_rx_clear_bitmaps(void)

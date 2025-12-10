@@ -17,6 +17,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/message_buffer.h"
 
+#define ECONET_MTU 8192
+
 typedef void (*econet_frame_callback)(uint8_t *data, uint16_t length, void *user_ctx);
 
 typedef struct

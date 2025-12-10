@@ -104,7 +104,7 @@ static size_t _econet_rx(uint8_t *buffer, size_t buffer_size, uint32_t timeout)
 static bool _aun_wait_ack(uint32_t seq)
 {
     aun_hdr_t ack;
-    for (int i=0;i<5;i++)
+    for (int i = 0; i < 5; i++)
     {
         if (xQueueReceive(ack_queue, &ack, 200) == pdPASS)
         {
@@ -122,7 +122,9 @@ static bool _aun_wait_ack(uint32_t seq)
             {
                 ESP_LOGW(TAG, "Ignoring out-of-sequence ACK");
             }
-        } else {
+        }
+        else
+        {
             return false;
         }
     }
@@ -133,7 +135,7 @@ static bool _aun_wait_ack(uint32_t seq)
 static void _aun_econet_rx_task(void *params)
 {
     static uint32_t rx_seq;
-    static uint8_t aun_packet[2048];
+    static uint8_t aun_packet[ECONET_MTU + 4];
 
     // Read Econet packet into the AUN packet buffer so its data
     // lands after the 8-byte AUN header
@@ -162,7 +164,7 @@ static void _aun_econet_rx_task(void *params)
         if (length != 6)
         {
             ESP_LOGW(ECONETTAG, "Expected scout but got a %d byte frame from %d.%d to %d.%d. Discarding",
-                     length, scout.hdr.src_stn, scout.hdr.src_net, scout.hdr.dst_stn, scout.hdr.dst_net);
+                     length, scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn);
             continue;
         }
 
@@ -171,13 +173,13 @@ static void _aun_econet_rx_task(void *params)
         if (length == 0)
         {
             ESP_LOGW(ECONETTAG, "Timeout waiting for data packet from %d.%d to %d.%d (ctrl=0x%x, port=0x%x). No clock?",
-                     scout.hdr.src_stn, scout.hdr.src_net, scout.hdr.dst_stn, scout.hdr.dst_net, scout.control, scout.port);
+                     scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn, scout.control, scout.port);
             continue;
         }
         else if (length == 1)
         {
             ESP_LOGW(ECONETTAG, "Idle whilst getting data packet from %d.%d to %d.%d (ctrl=0x%x, port=0x%x)",
-                     scout.hdr.src_stn, scout.hdr.src_net, scout.hdr.dst_stn, scout.hdr.dst_net, scout.control, scout.port);
+                     scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn, scout.control, scout.port);
             continue;
         }
         else if (length < 6)
@@ -241,7 +243,8 @@ static void _aun_econet_rx_task(void *params)
                 aunbridge_stats.tx_error_count++;
             }
 
-            if (_aun_wait_ack(rx_seq)) {
+            if (_aun_wait_ack(rx_seq))
+            {
                 break;
             }
 
@@ -259,7 +262,7 @@ static void _aun_econet_rx_task(void *params)
 
 static void _aun_udp_rx_process(econet_station_t *econet_station)
 {
-    static uint8_t aun_rx_buffer[1500];
+    static uint8_t aun_rx_buffer[ECONET_MTU];
     struct sockaddr_in source_addr;
     socklen_t socklen = sizeof(source_addr);
     int len = recvfrom(econet_station->socket, aun_rx_buffer, sizeof(aun_rx_buffer), 0,
@@ -272,6 +275,9 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
 
     switch (aun_rx_buffer[0])
     {
+    case AUN_TYPE_IMM:
+        aunbridge_stats.rx_imm_count++;
+        break;
     case AUN_TYPE_DATA:
         aunbridge_stats.rx_data_count++;
         break;
@@ -305,6 +311,31 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
         (hdr.sequence[2] << 16) |
         (hdr.sequence[3] << 24);
 
+    if (aun_rx_buffer[0] == AUN_TYPE_IMM)
+    {
+        // MACHINETYPE - TODO: We should forward this but need some other
+        //  stuff first because IMM is handled differently. This is to
+        //  satify AUN stations that use this as a reachability test
+        if (hdr.econet_port == 0 && hdr.econet_control == 0x8)
+        {
+            struct sockaddr_in dest_addr;
+            dest_addr.sin_addr.s_addr = inet_addr(aun_station->remote_address);
+            dest_addr.sin_family = AF_INET;
+            dest_addr.sin_port = htons(aun_station->udp_port);
+            memcpy(aun_rx_buffer, &hdr, sizeof(hdr));
+            aun_rx_buffer[0] = AUN_TYPE_IMM_REPLY;
+            sendto(econet_station->socket, aun_rx_buffer, 12, 0,
+                   (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            ESP_LOGI(TAG, "Responded to MACHINETYPE request without forwarding.");
+        }
+        else
+        {
+            ESP_LOGW(TAG, "Ignored IMM packet with ");
+        }
+
+        return;
+    }
+
     // Change AUN header to Econet style
     aun_rx_buffer[2] = econet_station->station_id;
     aun_rx_buffer[3] = 0x00;
@@ -322,6 +353,7 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
                  aun_station->network_id, aun_station->station_id,
                  inet_ntoa(source_addr.sin_addr),
                  econet_station->network_id, econet_station->station_id);
+
         aun_station->last_acq_result = econet_send(&aun_rx_buffer[2], len - 2);
         aun_station->last_acked_seq = ack_seq;
     }
