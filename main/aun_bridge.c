@@ -88,17 +88,22 @@ static aun_station_t *_get_aun_station_by_port(uint16_t udp_port)
     return NULL;
 }
 
-static size_t _econet_rx(uint8_t *buffer, size_t buffer_size, uint32_t timeout)
+static bool _econet_rx(econet_rx_packet_t *pkt, uint32_t timeout)
 {
-    size_t length = xMessageBufferReceive(econet_rx_frame_buffer, buffer, buffer_size, timeout);
-    if (length == 1 && (char)buffer[0] == 'S')
+    if (xQueueReceive(econet_rx_packet_queue, pkt, timeout) == pdFALSE)
+    {
+        return false;
+    }
+
+    if (pkt->type == 'S')
     {
         econet_rx_clear_bitmaps();
         ESP_LOGI(TAG, "Econet RX shutdown");
         xTaskNotifyGive(shutdown_notify_handle);
         vTaskDelete(NULL);
     }
-    return length;
+
+    return true;
 }
 
 static bool _aun_wait_ack(uint32_t seq)
@@ -135,61 +140,53 @@ static bool _aun_wait_ack(uint32_t seq)
 static void _aun_econet_rx_task(void *params)
 {
     static uint32_t rx_seq;
-    static uint8_t aun_packet[ECONET_MTU + 4];
-
-    // Read Econet packet into the AUN packet buffer so its data
-    // lands after the 8-byte AUN header
-    static const uint32_t aun_data_offset = 8 - sizeof(econet_hdr_t);
-    static uint8_t *const econet_packet = &aun_packet[aun_data_offset];
-    static const size_t econet_packet_size = sizeof(aun_packet) - aun_data_offset;
+    econet_rx_packet_t econet_pkt;
 
     econet_scout_t scout;
     econet_hdr_t econet_hdr;
 
     for (;;)
     {
-
         // Get scout
-        size_t length = _econet_rx(econet_packet, econet_packet_size, portMAX_DELAY);
-        if (length == 1)
+        _econet_rx(&econet_pkt, portMAX_DELAY);
+        if (econet_pkt.type == 'I')
         {
             continue; // Idle notification
         }
-        else if (length < 6)
+        else if (econet_pkt.length < 6)
         {
             ESP_LOGW(ECONETTAG, "Unexpected short frame discarded");
             continue;
         }
-        memcpy(&scout, econet_packet, sizeof(scout));
-        if (length != 6)
+        memcpy(&scout, econet_pkt.data + 4, sizeof(scout));
+        if (econet_pkt.length != 6)
         {
             ESP_LOGW(ECONETTAG, "Expected scout but got a %d byte frame from %d.%d to %d.%d. Discarding",
-                     length, scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn);
+                     econet_pkt.length, scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn);
             continue;
         }
 
         // Get data packet
-        length = _econet_rx(econet_packet, econet_packet_size, 10000);
-        if (length == 0)
+        if (!_econet_rx(&econet_pkt, 10000))
         {
             ESP_LOGW(ECONETTAG, "Timeout waiting for data packet from %d.%d to %d.%d (ctrl=0x%x, port=0x%x). No clock?",
                      scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn, scout.control, scout.port);
             continue;
         }
-        else if (length == 1)
+        else if (econet_pkt.length == 1)
         {
             ESP_LOGW(ECONETTAG, "Idle whilst getting data packet from %d.%d to %d.%d (ctrl=0x%x, port=0x%x)",
                      scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn, scout.control, scout.port);
             continue;
         }
-        else if (length < 6)
+        else if (econet_pkt.length < 6)
         {
             ESP_LOGW(ECONETTAG, "Unexpected short frame discarded");
             continue;
         }
-        memcpy(&econet_hdr, econet_packet, sizeof(econet_hdr));
+        memcpy(&econet_hdr, econet_pkt.data + 4, sizeof(econet_hdr));
         ESP_LOGI(ECONETTAG, "Data packet %d bytes from %d.%d to %d.%d (ctrl=0x%x, port=0x%x)",
-                 length - 4,
+                 econet_pkt.length - 4,
                  econet_hdr.src_net, econet_hdr.src_stn,
                  econet_hdr.dst_net, econet_hdr.dst_stn,
                  scout.control, scout.port);
@@ -223,6 +220,7 @@ static void _aun_econet_rx_task(void *params)
 
         rx_seq += 4;
 
+        uint8_t *aun_packet = econet_pkt.data;
         int retries = 5;
         while (--retries > 0)
         {
@@ -235,7 +233,7 @@ static void _aun_econet_rx_task(void *params)
             aun_packet[6] = (rx_seq >> 16) & 0xFF;
             aun_packet[7] = (rx_seq >> 24) & 0xFF;
 
-            int err = sendto(econet_station->socket, aun_packet, length - sizeof(econet_hdr) + 8, 0,
+            int err = sendto(econet_station->socket, aun_packet, econet_pkt.length - sizeof(econet_hdr) + 8, 0,
                              (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             if (err < 0)
             {

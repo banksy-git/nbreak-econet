@@ -62,8 +62,15 @@ typedef struct
     uint8_t data[0];
 } econet_scout_t;
 
+typedef struct
+{
+    uint8_t *data;
+    size_t length;
+    char type;
+} econet_rx_packet_t;
+
 extern econet_stats_t econet_stats;
-extern MessageBufferHandle_t econet_rx_frame_buffer;
+extern QueueHandle_t econet_rx_packet_queue;
 
 void econet_setup(const econet_config_t *config);
 void econet_clock_reconfigure(void);
@@ -78,9 +85,10 @@ void econet_rx_shutdown(void);
 #define TAG "ECONET"
 extern econet_config_t econet_cfg;
 extern QueueHandle_t tx_command_queue;
-extern portMUX_TYPE econet_rx_interrupt_lock;
 extern TaskHandle_t tx_task;
 extern volatile bool tx_is_in_progress;
+extern uint32_t rx_ack_wait_time;
+
 void econet_rx_setup(void);
 void econet_rx_start(void);
 void econet_tx_setup(void);

@@ -22,8 +22,11 @@
 #include "econet.h"
 
 #define ECONET_IDLE_BITS 15
+#define ECONET_PACKET_BUFFER_COUNT 3
+#define ECONET_BUFFER_WORKSPACE 4
 
-MessageBufferHandle_t DRAM_ATTR econet_rx_frame_buffer;
+QueueHandle_t DRAM_ATTR econet_rx_packet_queue;
+uint32_t DRAM_ATTR rx_ack_wait_time;
 
 static parlio_rx_unit_handle_t rx_unit;
 static parlio_rx_delimiter_handle_t rx_delimiter;
@@ -33,12 +36,12 @@ static uint8_t DRAM_ATTR _raw_shift_in;
 static uint8_t DRAM_ATTR _recv_data_shift_in;
 static uint32_t DRAM_ATTR _recv_data_bit;
 static uint32_t DRAM_ATTR is_frame_active;
-static uint8_t DRAM_ATTR rx_bytes[ECONET_MTU];
+static uint8_t DRAM_ATTR rx_packet_buffers[ECONET_PACKET_BUFFER_COUNT][ECONET_MTU + ECONET_BUFFER_WORKSPACE];
+static uint8_t *DRAM_ATTR rx_buf;
+static uint32_t DRAM_ATTR rx_packet_buffer_index;
 static uint16_t DRAM_ATTR rx_frame_len;
 static uint16_t DRAM_ATTR rx_crc;
 static uint8_t DRAM_ATTR rx_idle_one_counter;
-
-portMUX_TYPE DRAM_ATTR econet_rx_interrupt_lock = portMUX_INITIALIZER_UNLOCKED;
 
 typedef struct
 {
@@ -91,7 +94,7 @@ static inline void IRAM_ATTR _complete_frame()
     econet_stats.rx_frame_count++;
 
     // Is this for us?
-    if ((bm256_test(&rx_station_bitmap, rx_bytes[0]) && rx_bytes[1] == 0x00) || bm256_test(&rx_network_bitmap, rx_bytes[1]))
+    if ((bm256_test(&rx_station_bitmap, rx_buf[0]) && rx_buf[1] == 0x00) || bm256_test(&rx_network_bitmap, rx_buf[1]))
     {
 
         uint32_t data_len = rx_frame_len - 2;
@@ -102,16 +105,28 @@ static inline void IRAM_ATTR _complete_frame()
         {
             econet_tx_command_t ack_cmd = {
                 .cmd = 'A',
-                .dst_stn = rx_bytes[2],
-                .dst_net = rx_bytes[3],
-                .src_stn = rx_bytes[0],
-                .src_net = rx_bytes[1]};
-            xQueueSendFromISR(tx_command_queue, &ack_cmd, NULL);
+                .dst_stn = rx_buf[2],
+                .dst_net = rx_buf[3],
+                .src_stn = rx_buf[0],
+                .src_net = rx_buf[1]};
+            xQueueSendFromISR(tx_command_queue, &ack_cmd, &is_awoken);
             econet_tx_pre_go();
 
-            portENTER_CRITICAL_ISR(&econet_rx_interrupt_lock);
-            xMessageBufferSendFromISR(econet_rx_frame_buffer, rx_bytes, data_len, pdFALSE);
-            portEXIT_CRITICAL_ISR(&econet_rx_interrupt_lock);
+            econet_rx_packet_t rx_pkt = {
+                .type = 'P',
+                .data = &rx_packet_buffers[rx_packet_buffer_index][0],
+                .length = data_len,
+            };
+            xQueueSendFromISR(econet_rx_packet_queue, &rx_pkt, NULL);
+
+            rx_packet_buffer_index++;
+            if (rx_packet_buffer_index >= ECONET_PACKET_BUFFER_COUNT)
+            {
+                rx_packet_buffer_index = 0;
+            }
+            rx_buf = &rx_packet_buffers[rx_packet_buffer_index][ECONET_BUFFER_WORKSPACE];
+
+            rx_ack_wait_time = esp_cpu_get_cycle_count();
         }
         else
         {
@@ -120,11 +135,11 @@ static inline void IRAM_ATTR _complete_frame()
 
             econet_tx_command_t ack_cmd = {
                 .cmd = 'a',
-                .dst_stn = rx_bytes[0],
-                .dst_net = rx_bytes[1],
-                .src_stn = rx_bytes[2],
-                .src_net = rx_bytes[3]};
-            xQueueSendFromISR(tx_command_queue, &ack_cmd, NULL);
+                .dst_stn = rx_buf[0],
+                .dst_net = rx_buf[1],
+                .src_stn = rx_buf[2],
+                .src_net = rx_buf[3]};
+            xQueueSendFromISR(tx_command_queue, &ack_cmd, &is_awoken);
         }
 
         portYIELD_FROM_ISR(is_awoken);
@@ -141,10 +156,11 @@ static inline void IRAM_ATTR _clk_bit(uint8_t c)
             rx_idle_one_counter++;
             if (rx_idle_one_counter == ECONET_IDLE_BITS)
             {
-                portENTER_CRITICAL_ISR(&econet_rx_interrupt_lock);
-                char idle_rx_cmd = 'I';
-                xMessageBufferSendFromISR(econet_rx_frame_buffer, &idle_rx_cmd, 1, NULL);
-                portEXIT_CRITICAL_ISR(&econet_rx_interrupt_lock);
+                econet_rx_packet_t rx_pkt = {
+                    .type = 'I',
+                };
+                xQueueSendFromISR(econet_rx_packet_queue, &rx_pkt, NULL);
+
                 econet_tx_command_t idle_cmd = {
                     .cmd = 'I',
                 };
@@ -217,9 +233,9 @@ static inline void IRAM_ATTR _clk_bit(uint8_t c)
                                        : (uint16_t)(rx_crc >> 1);
         }
 
-        rx_bytes[rx_frame_len] = _recv_data_shift_in;
+        rx_buf[rx_frame_len] = _recv_data_shift_in;
         rx_frame_len += 1;
-        if (rx_frame_len == sizeof(rx_bytes))
+        if (rx_frame_len == ECONET_MTU)
         {
             is_frame_active = 0;
             econet_stats.rx_oversize_count++;
@@ -285,7 +301,9 @@ void econet_rx_setup(void)
     };
     ESP_ERROR_CHECK(parlio_rx_unit_register_event_callbacks(rx_unit, &cbs, NULL));
 
-    econet_rx_frame_buffer = xMessageBufferCreate(ECONET_MTU);
+    econet_rx_packet_queue = xQueueCreate(4, sizeof(econet_rx_packet_t));
+    rx_packet_buffer_index = 0;
+    rx_buf = &rx_packet_buffers[rx_packet_buffer_index][ECONET_BUFFER_WORKSPACE];
 }
 
 void econet_rx_start(void)

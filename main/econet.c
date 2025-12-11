@@ -109,9 +109,7 @@ void econet_start(void)
 
 void econet_rx_shutdown(void)
 {
-    char shutdown_cmd = 'S';
     econet_rx_clear_bitmaps();
-    portENTER_CRITICAL(&econet_rx_interrupt_lock);
-    xMessageBufferSend(econet_rx_frame_buffer, &shutdown_cmd, sizeof(shutdown_cmd), 0);
-    portEXIT_CRITICAL(&econet_rx_interrupt_lock);
+    econet_rx_packet_t shutdown_cmd = {.type = 'S'};
+    xQueueSend(econet_rx_packet_queue, &shutdown_cmd, portMAX_DELAY);
 }
