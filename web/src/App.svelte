@@ -5,6 +5,7 @@
 
   import Navbar from "./components/layout/Navbar.svelte";
   import Sidebar from "./components/layout/Sidebar.svelte";
+  import Footer from "./components/layout/Footer.svelte";
 
   onDestroy(() => {
     closeWebSocket();
@@ -31,10 +32,5 @@
     </main>
   </div>
 
-  <footer
-    class="h-8 text-xs text-center text-gray-500 border-t flex items-center justify-center"
-  >
-    <a href="https://paulbanks.org/projects/econet?src=nbreak-app">N-Break</a> -
-    Copyright © 2025 Paul G. Banks.
-  </footer>
+  <Footer />
 </div>
