@@ -42,6 +42,8 @@ Connect the components as shown in the schematic:
 
 ![Hardware schematic](docs/Schematic.png)
 
+*-Schematic note: The clock pins in a previous version of this schematic were reversed, as stated in _The Econet System User Guide_ however this was not correct and later documentation shows them reversed.
+
 **Note:** Power the RS485 driver modules from **3.3 V**.
 
 Final assembly complete with Econet plug ready for use:
