@@ -133,7 +133,7 @@
   
       <p class="text-xs text-gray-500">
         Configure the internal clock frequency and duty cycle. The maximum tested
-        frequency is <span class="font-semibold">100&nbsp;kHz</span> (100&nbsp;000&nbsp;Hz).
+        frequency is <span class="font-semibold">200&nbsp;kHz</span> (200&nbsp;000&nbsp;Hz).
       </p>
   
       <div class="grid grid-cols-1 gap-3">
