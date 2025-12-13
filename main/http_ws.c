@@ -341,7 +341,7 @@ static esp_err_t _ws_save_econet_clock(httpd_req_t *req, int request_id, const c
         return send_err_response(req, request_id, "Missing or incorrect fields");
     }
 
-    if (duty->valueint < 1 || duty->valueint > 100 || freq->valueint < 50000 || freq->valueint > 300000)
+    if (duty->valueint < 1 || duty->valueint > 100 || freq->valueint < 50000 || freq->valueint > 500000)
     {
         return send_err_response(req, request_id, "Unacceptable clock values");
     }

@@ -142,7 +142,7 @@
           <input
             type="number"
             min="1"
-            max="100000"
+            max="500000"
             step="1"
             class="border rounded px-2 py-1 text-sm"
             bind:value={clockSettings.internalFrequencyHz}

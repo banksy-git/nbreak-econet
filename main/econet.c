@@ -40,7 +40,7 @@ void econet_clock_setup(void)
     ledc_timer_config_t ledc_timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .timer_num = ECONET_CLK_TMR_CHANNEL,
-        .duty_resolution = LEDC_TIMER_7_BIT,
+        .duty_resolution = LEDC_TIMER_6_BIT,
         .freq_hz = econet_cfg.clk_freq_hz,
         .clk_cfg = LEDC_AUTO_CLK};
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
@@ -65,7 +65,7 @@ void econet_clock_reconfigure(void)
     {
         gpio_set_level(econet_cfg.clk_oe_pin, 1);
         ledc_set_duty(LEDC_LOW_SPEED_MODE, ECONET_CLK_PWM_CHANNEL,
-                      (128 * clock_cfg.duty_pc) / 100);
+                      (64 * clock_cfg.duty_pc) / 100);
         ledc_set_freq(LEDC_LOW_SPEED_MODE, ECONET_CLK_TMR_CHANNEL,
                       clock_cfg.frequency_hz);
     }
