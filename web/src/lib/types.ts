@@ -68,6 +68,7 @@ export type EconetClockSettings = {
   mode: ClockMode;
   internalFrequencyHz: number;
   internalDutyCycle: number; // percent, 0–100
+  termination: number; // -1 = feature absent, 0 = off, 1 = on
 };
 
 export type StatsStreamPayload = {

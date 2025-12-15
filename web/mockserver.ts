@@ -159,6 +159,7 @@ export function mockWsPlugin(): PluginOption {
                 mode: "internal",
                 internalFrequencyHz: 100000,
                 internalDutyCycle: 30,
+                termination: 1
               }
               let response: ServerMessage = {
                 type: "response",

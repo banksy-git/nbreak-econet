@@ -8,8 +8,9 @@
       mode: "internal",
       internalFrequencyHz: 100000,
       internalDutyCycle: 50,
+      termination: -1
     };
-  
+
     let loading = true;
     let loadError = "";
     let saving = false;
@@ -65,7 +66,31 @@
         saving = false;
       }
     }
+
+    async function saveTerminationSettings() {
+      saving = true;
+      saveStatus = "idle";
+      saveError = "";
+      try {
+        const res = await sendWsRequest({
+          type: "save_econet_clock",
+          settings: clockSettings,
+        });
   
+        if (res.ok) {
+          saveStatus = "success";
+        } else {
+          saveStatus = "error";
+          saveError = res.error ?? "Failed to save Econet termination settings";
+        }
+      } catch (e) {
+        saveStatus = "error";
+        saveError = "Connection error while saving Econet termination settings";
+      } finally {
+        saving = false;
+      }
+    }
+
     $: internalPanelDisabled =
       formDisabled || clockSettings.mode !== "internal";
   </script>
@@ -82,8 +107,8 @@
     <h2 class="text-sm font-semibold mb-1">Econet Clock Configuration</h2>
   
     <p class="text-xs text-gray-600">
-      The maximum tested Econet clock is <span class="font-semibold">200&nbsp;kHz</span>.
-      Higher frequencies may cause unreliable operation.
+      The maximum tested Econet clock is <span class="font-semibold">100&nbsp;kHz</span>.
+      Higher frequencies might cause unreliable operation.
     </p>
   
     <!-- Mode selection -->
@@ -196,4 +221,65 @@
       {/if}
     </div>
   </section>
+
+{#if clockSettings.termination >= 0}
+  <section class="bg-white rounded-lg shadow-sm p-4 space-y-4 max-w-md">
+    <h2 class="text-sm font-semibold mb-1">Econet Interface Termination</h2>
+    <p class="text-xs text-gray-600">
+      Normally enabled. If this interface is wired to a wider Econet bus with terminators installed elsewhere,
+      switch bus termination off here.
+    </p>
+
+    <!-- Terminator selection -->
+    <div class="space-y-2 text-sm">
+      <p class="font-medium text-xs uppercase tracking-wide text-gray-500">
+        Termination
+      </p>
+      <div class="flex items-center gap-4">
+        <label class="inline-flex items-center gap-1.5">
+          <input
+            type="radio"
+            name="termination"
+            value={0}
+            bind:group={clockSettings.termination}
+          />
+          <span>Off</span>
+        </label>
   
+        <label class="inline-flex items-center gap-1.5">
+          <input
+            type="radio"
+            name="termination"
+            value={1}
+            bind:group={clockSettings.termination}
+          />
+          <span>On</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Save button + status -->
+    <div class="pt-2 flex items-center gap-3">
+      <button
+        class="px-3 py-1.5 text-xs rounded-md bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
+        on:click={saveTerminationSettings}
+      >
+        {#if saving}
+          Saving...
+        {:else}
+          Save and activate
+        {/if}
+      </button>
+
+      {#if saveStatus === "success"}
+        <p class="text-[11px] text-green-600">
+          Termination settings saved.
+        </p>
+      {:else if saveStatus === "error"}
+        <p class="text-[11px] text-red-600">
+          {saveError}
+        </p>
+      {/if}
+    </div>
+  </section>
+{/if}

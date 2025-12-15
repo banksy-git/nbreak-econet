@@ -11,6 +11,8 @@
  */
 
 #include <stdio.h>
+#include "driver/gpio.h"
+#include "hal/gpio_types.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "esp_check.h"
@@ -214,23 +216,37 @@ void config_init(void)
     config_load_wifi();
 }
 
-esp_err_t config_save_econet_clock(const config_econet_clock_t* cfg)
-{
+esp_err_t config_save_econet_clock(const config_econet_clock_t *cfg) {
+    if (cfg->termination >= 0)
+        gpio_set_level(10, cfg->termination);
     return _save_config("econet_clock", cfg, sizeof(*cfg));
 }
 
-esp_err_t config_load_econet_clock(config_econet_clock_t* cfg)
-{
+esp_err_t config_load_econet_clock(config_econet_clock_t *cfg) {
+    // Sample D10 pin
+    gpio_set_direction(GPIO_NUM_10, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(GPIO_NUM_10, GPIO_PULLUP_ONLY);
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+
+    // Read stored config
     esp_err_t err = _load_config("econet_clock", cfg, sizeof(*cfg));
-    if (err != ESP_OK)
-    {
+    if (err != ESP_OK) {
         ESP_LOGW(TAG, "Using default Econet clock configuration");
         memset(cfg, 0, sizeof(*cfg));
         cfg->duty_pc = 50;
         cfg->frequency_hz = 100000;
         cfg->mode = ECONET_CLOCK_INTERNAL;
+        cfg->termination = -1;
     }
+
+    // Switch the terminators according to the config
+    if (gpio_get_level(GPIO_NUM_10) == 0) {
+        if (cfg->termination != 0 && cfg->termination != 1) // Enable by default
+            cfg->termination = 1;
+        gpio_set_direction(GPIO_NUM_10, GPIO_MODE_OUTPUT);
+        gpio_set_level(GPIO_NUM_10, cfg->termination);
+    } else
+        cfg->termination = -1;
+
     return ESP_OK;
 }
-
-

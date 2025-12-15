@@ -335,13 +335,14 @@ static esp_err_t _ws_save_econet_clock(httpd_req_t *req, int request_id, const c
     const cJSON *mode = cJSON_GetObjectItemCaseSensitive(settings, "mode");
     const cJSON *freq = cJSON_GetObjectItemCaseSensitive(settings, "internalFrequencyHz");
     const cJSON *duty = cJSON_GetObjectItemCaseSensitive(settings, "internalDutyCycle");
+    const cJSON *term = cJSON_GetObjectItemCaseSensitive(settings, "termination");
 
     if (!cJSON_IsString(mode) || !cJSON_IsNumber(freq) || !cJSON_IsNumber(duty))
     {
         return send_err_response(req, request_id, "Missing or incorrect fields");
     }
 
-    if (duty->valueint < 1 || duty->valueint > 100 || freq->valueint < 50000 || freq->valueint > 500000)
+    if (duty->valueint < 5 || duty->valueint > 95 || freq->valueint < 50000 || freq->valueint > 500000)
     {
         return send_err_response(req, request_id, "Unacceptable clock values");
     }
@@ -350,6 +351,7 @@ static esp_err_t _ws_save_econet_clock(httpd_req_t *req, int request_id, const c
         .mode = !strcmp(mode->valuestring, "internal") ? ECONET_CLOCK_INTERNAL : ECONET_CLOCK_EXTERNAL,
         .frequency_hz = freq->valueint,
         .duty_pc = duty->valueint,
+        .termination = term->valueint
     };
 
     config_save_econet_clock(&clock_cfg);
@@ -370,12 +372,14 @@ static esp_err_t _ws_get_econet_clock(httpd_req_t *req, int request_id, const cJ
              "\"settings\": {"
              "\"mode\": \"%s\","
              "\"internalFrequencyHz\": %lu,"
-             "\"internalDutyCycle\": %lu"
+             "\"internalDutyCycle\": %lu,"
+             "\"termination\": %d"
              "}}",
              request_id,
              clock_cfg.mode == ECONET_CLOCK_INTERNAL ? "internal" : "external",
              clock_cfg.frequency_hz,
-             clock_cfg.duty_pc);
+             clock_cfg.duty_pc,
+             clock_cfg.termination);
     return _ws_send(req, response);
 }
 

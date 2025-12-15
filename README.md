@@ -145,7 +145,7 @@ DMA scheduling, FIFO loading and start/stop control of the peripheral.
 3. Build and flash the firmware:
 
    ```shell
-   idf.py flash
+   idf.py -p <device> flash
    ```
 
 ## Enjoy!

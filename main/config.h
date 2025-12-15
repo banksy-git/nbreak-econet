@@ -30,11 +30,11 @@ typedef enum {
     ECONET_CLOCK_EXTERNAL,
 } econet_clock_mode_t;
 
-typedef struct
-{
+typedef struct {
     uint32_t frequency_hz;
     uint32_t duty_pc;
     econet_clock_mode_t mode;
+    int8_t termination;
 } config_econet_clock_t;
 
 typedef struct
