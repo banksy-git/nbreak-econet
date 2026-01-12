@@ -122,7 +122,7 @@ Example configuration files for both are included in the contrib/ directory unde
 
 ## Uplinks
 
-nbreak-econet now supports uplinks (trunks) to wide-area Econet networks using the Bridge-over-IP protocol developed by the PiEconetBridge team.
+N-Break now supports uplinks (trunks) to wide-area Econet networks using the Bridge-over-IP protocol developed by the PiEconetBridge team.
 
 To configure an uplink via PiEconetBridge, add a `TRUNK` line to your configuration:
 
