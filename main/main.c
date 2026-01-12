@@ -75,10 +75,9 @@ void print_task_list(void)
 
 void app_main(void)
 {
+    init_fs();
 
     config_init();
-
-    init_fs();
 
     logging_init();
 

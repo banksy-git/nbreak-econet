@@ -62,17 +62,35 @@ typedef struct
     uint8_t key_len;
 } config_trunk_t;
 
-typedef esp_err_t (*config_cb_econet_station)(config_econet_station_t *cfg);
-typedef esp_err_t (*config_cb_aun_station)(config_aun_station_t *cfg);
-typedef esp_err_t (*config_cb_trunk)(config_trunk_t *cfg);
+// Global parsed configuration
+extern cJSON *g_config;
 
 void config_init(void);
-esp_err_t config_save_wifi(void);
-esp_err_t config_load_wifi(void);
+esp_err_t config_save(void);
+esp_err_t config_reload(void);
 
-cJSON *config_load_econet_json(void);
+typedef void (*config_local_station_iterator)(void *ctx, const config_econet_station_t *station);
+typedef void (*config_remote_station_iterator)(void *ctx, const config_aun_station_t *station);
+typedef void (*config_trunk_iterator)(void *ctx, const config_trunk_t *trunk);
+
+void config_foreach_local_station(config_local_station_iterator iter, void *ctx);
+void config_foreach_remote_station(config_remote_station_iterator iter, void *ctx);
+void config_foreach_trunk(config_trunk_iterator iter, void *ctx);
+
+uint8_t config_get_trunk_network(void);
+
+// Internal: Get pointers to config sections
+// This is a shortcut for http_ws.c because it already understands cJSON...
+cJSON *config_get_wifi(void);
+cJSON *config_get_econet(void);
+cJSON *config_get_trunks(void);
+
+esp_err_t config_save_wifi_secrets(const char *sta_password, const char *ap_password);
+
+esp_err_t config_save_trunk_key(int trunk_index, const uint8_t *key, size_t key_len);
+esp_err_t config_load_trunk_key(int trunk_index, uint8_t *key, size_t *key_len);
+
+void config_get_econet_clock(config_econet_clock_t *clock);
+void config_set_econet_clock(const config_econet_clock_t *clock);
+
 esp_err_t config_save_econet(const cJSON *settings);
-esp_err_t config_load_econet(config_cb_econet_station eco_cb, config_cb_aun_station aun_cb, config_cb_trunk trunk_cb);
-
-esp_err_t config_save_econet_clock(const config_econet_clock_t *clk);
-esp_err_t config_load_econet_clock(config_econet_clock_t *clk);

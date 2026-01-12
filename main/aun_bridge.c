@@ -474,7 +474,7 @@ static void _aun_udp_rx_task(void *params)
     }
 }
 
-static esp_err_t _alloc_aun_station(config_aun_station_t *cfg)
+static void _setup_aun_station(void *ctx, const config_aun_station_t *cfg)
 {
     aun_station_t *station = NULL;
     for (int i = 0; i < ARRAY_SIZE(aun_stations); i++)
@@ -488,7 +488,7 @@ static esp_err_t _alloc_aun_station(config_aun_station_t *cfg)
     if (station == NULL)
     {
         ESP_LOGE(TAG, "No free AUN station slots.");
-        return ESP_FAIL;
+        return;
     }
 
     snprintf(station->remote_address, sizeof(station->remote_address), "%s", cfg->remote_address);
@@ -497,10 +497,9 @@ static esp_err_t _alloc_aun_station(config_aun_station_t *cfg)
     station->udp_port = cfg->udp_port;
     station->last_acked_seq = UINT32_MAX;
     station->last_tx_result = ECONET_NACK;
-    return ESP_OK;
 }
 
-static esp_err_t _open_econet_station(config_econet_station_t *cfg)
+static void _setup_econet_station(void *ctx, const config_econet_station_t *cfg)
 {
     econet_station_t *station = NULL;
     for (int i = 0; i < ARRAY_SIZE(econet_stations); i++)
@@ -514,7 +513,7 @@ static esp_err_t _open_econet_station(config_econet_station_t *cfg)
     if (station == NULL)
     {
         ESP_LOGE(TAG, "Failed to add station %d. No free slots.", cfg->station_id);
-        return ESP_FAIL;
+        return;
     }
 
     struct sockaddr_in listen_addr = {
@@ -527,7 +526,7 @@ static esp_err_t _open_econet_station(config_econet_station_t *cfg)
     if (sock < 0)
     {
         ESP_LOGE(TAG, "Failed to add station %d. Unable to create socket: errno %d", cfg->station_id, errno);
-        return ESP_FAIL;
+        return;
     }
 
     int err = bind(sock, (struct sockaddr *)&listen_addr, sizeof(listen_addr));
@@ -535,7 +534,7 @@ static esp_err_t _open_econet_station(config_econet_station_t *cfg)
     {
         ESP_LOGE(TAG, "Failed to add station %d. Socket unable to bind: errno %d", cfg->station_id, errno);
         close(sock);
-        return ESP_FAIL;
+        return;
     }
 
     ESP_LOGI(TAG, "Added Econet station %d on port %d", cfg->station_id, cfg->local_udp_port);
@@ -545,7 +544,6 @@ static esp_err_t _open_econet_station(config_econet_station_t *cfg)
     station->local_udp_port = cfg->local_udp_port;
     station->socket = sock;
     station->is_open = true;
-    return ESP_OK;
 }
 
 void aunbridge_shutdown(void)
@@ -587,7 +585,8 @@ void aunbridge_reconfigure(void)
     }
 
     // Load configuration from config file
-    config_load_econet(_open_econet_station, _alloc_aun_station, NULL);
+    config_foreach_local_station(_setup_econet_station, NULL);
+    config_foreach_remote_station(_setup_aun_station, NULL);
 
     // Enable Econet RX for the AUN stations
     econet_rx_clear_bitmaps();

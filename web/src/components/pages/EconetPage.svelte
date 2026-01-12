@@ -9,8 +9,10 @@
   import type {EconetSettings, AUNRow, ECSRow} from "../../lib/types"
 
   let econetSettings: EconetSettings = {
-    econetStations: [],
-    aunStations: [],
+    econet: {
+      localStations: [],
+      remoteStations: [],
+    },
   };
 
   let loading = true;
@@ -28,7 +30,11 @@
   ];
 
   function ecsOnChange(newRows: ECSRow[]) {
-    econetSettings.econetStations = newRows;
+    if (!econetSettings.econet) {
+      econetSettings.econet = { localStations: newRows };
+    } else {
+      econetSettings.econet.localStations = newRows;
+    }
   }
 
   const aunColumns: ColumnDef<AUNRow>[] = [
@@ -38,7 +44,11 @@
   ];
 
   function aunOnChange(newRows: AUNRow[]) {
-    econetSettings.aunStations = newRows;
+    if (!econetSettings.econet) {
+      econetSettings.econet = { remoteStations: newRows };
+    } else {
+      econetSettings.econet.remoteStations = newRows;
+    }
   }
 
   // Load econet settings when page is shown
@@ -108,7 +118,7 @@
   <div class="space-y-2 text-sm opacity-{formDisabled ? 50 : 100}">
     <EditableTable
       columns={ecsColumns}
-      rows={econetSettings?.econetStations || []}
+      rows={econetSettings.econet?.localStations || []}
       onChange={ecsOnChange}
     />
 
@@ -137,7 +147,7 @@
   <div class="space-y-2 text-sm opacity-{formDisabled ? 50 : 100}">
     <EditableTable
       columns={aunColumns}
-      rows={econetSettings.aunStations || []}
+      rows={econetSettings.econet?.remoteStations || []}
       onChange={aunOnChange}
     />
 

@@ -254,7 +254,7 @@ void econet_rx_setup(void)
 {
     // Load clock configuration to check if we should invert the clock
     config_econet_clock_t clock_cfg;
-    config_load_econet_clock(&clock_cfg);
+    config_get_econet_clock(&clock_cfg);
 
     parlio_rx_unit_config_t rx_config = {
         .trans_queue_depth = sizeof(rx_payload_dma_buffer),

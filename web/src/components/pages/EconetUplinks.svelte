@@ -9,10 +9,10 @@
   import type { EconetSettings, TrunkRow } from "../../lib/types";
 
   let econetSettings: EconetSettings = {
-    econetStations: [],
-    aunStations: [],
-    trunks: [],
-    trunkOurNet: 88,
+    trunks: {
+      ourNetwork: 88,
+      uplinks: [],
+    },
   };
 
   let loading = true;
@@ -25,13 +25,17 @@
   $: formDisabled = loading || saving || !isConnected;
 
   const uplinkColumns: ColumnDef<TrunkRow>[] = [
-    { label: "Remote IP Address", key: "remote_ip", type: "string" },
-    { label: "Remote UDP port", key: "udp_port", type: "number" },
-    { label: "Encryption key", key: "aes_key", type: "string" },
+    { label: "Remote IP Address", key: "remoteIp", type: "string" },
+    { label: "Remote UDP port", key: "udpPort", type: "number" },
+    { label: "Encryption key", key: "aesKey", type: "string" },
   ];
 
   function uplinkOnChange(newRows: TrunkRow[]) {
-    econetSettings.trunks = newRows;
+    if (!econetSettings.trunks) {
+      econetSettings.trunks = { uplinks: newRows };
+    } else {
+      econetSettings.trunks.uplinks = newRows;
+    }
   }
 
   // Load uplink settings when page is shown
@@ -40,7 +44,7 @@
     loadError = "";
 
     try {
-      const res = await sendWsRequest({ type: "get_econet_uplinks" });
+      const res = await sendWsRequest({ type: "get_econet" });
 
       if (res.ok && res.settings) {
         econetSettings = res.settings;
@@ -63,7 +67,7 @@
 
     try {
       const res = await sendWsRequest({
-        type: "save_econet_uplinks",
+        type: "save_econet",
         settings: econetSettings,
       });
 
@@ -110,7 +114,7 @@
           type="number"
           min="1"
           max="255"
-          bind:value={econetSettings.trunkOurNet}
+          bind:value={econetSettings.trunks.ourNetwork}
           disabled={formDisabled}
           class="px-2 py-1 text-sm border rounded-md disabled:bg-gray-100"
           placeholder="88"
@@ -127,7 +131,7 @@
       <p class="text-xs font-medium text-gray-700">Trunk connections</p>
       <EditableTable
         columns={uplinkColumns}
-        rows={econetSettings?.trunks || []}
+        rows={econetSettings.trunks?.uplinks || []}
         onChange={uplinkOnChange}
       />
     </div>

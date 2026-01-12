@@ -403,7 +403,7 @@ void econet_tx_start(void)
 {
     // Load clock configuration to check if we should invert the clock
     config_econet_clock_t clock_cfg;
-    config_load_econet_clock(&clock_cfg);
+    config_get_econet_clock(&clock_cfg);
 
     // When invert_clock is false (default), we invert via GPIO matrix to work around
     // the broken .sample_edge parameter. When invert_clock is true, we disable this

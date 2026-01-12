@@ -59,7 +59,7 @@ void econet_clock_setup(void)
 void econet_clock_reconfigure(void)
 {
     config_econet_clock_t clock_cfg;
-    config_load_econet_clock(&clock_cfg);
+    config_get_econet_clock(&clock_cfg);
 
     if (clock_cfg.mode == ECONET_CLOCK_INTERNAL)
     {

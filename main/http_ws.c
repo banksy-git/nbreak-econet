@@ -132,11 +132,32 @@ static esp_err_t _ws_get_econet(httpd_req_t *req, int request_id, const cJSON *p
     cJSON_AddNumberToObject(root, "id", request_id);
     cJSON_AddBoolToObject(root, "ok", cJSON_True);
 
-    cJSON *settings = config_load_econet_json();
-    if (settings)
+    cJSON *settings = cJSON_CreateObject();
+
+    // Get econet and trunks sections from config
+    cJSON *econet = config_get_econet();
+    if (econet)
     {
-        cJSON_AddItemToObject(root, "settings", settings);
+        cJSON_AddItemToObject(settings, "econet", cJSON_Duplicate(econet, 1));
     }
+
+    cJSON *trunks = config_get_trunks();
+    if (trunks)
+    {
+        // Remove aes_key fields from uplinks (write-only)
+        cJSON *trunks_copy = cJSON_Duplicate(trunks, 1);
+        cJSON *uplinks = cJSON_GetObjectItem(trunks_copy, "uplinks");
+        if (uplinks)
+        {
+            for (cJSON *uplink = uplinks->child; uplink != NULL; uplink = uplink->next)
+            {
+                cJSON_DeleteItemFromObject(uplink, "aesKey");
+            }
+        }
+        cJSON_AddItemToObject(settings, "trunks", trunks_copy);
+    }
+
+    cJSON_AddItemToObject(root, "settings", settings);
 
     char *response = cJSON_PrintUnformatted(root);
     esp_err_t err = _ws_send(req, response);
@@ -150,7 +171,7 @@ static void reconfig_wifi(TimerHandle_t t)
 {
     xTimerDelete(t, 0);
     wifi_reconfigure();
-    config_save_wifi();
+    config_save();
 }
 
 static esp_err_t _ws_save_wifi(httpd_req_t *req, int request_id, const cJSON *payload)
@@ -283,8 +304,13 @@ static esp_err_t _ws_get_wifi_ap(httpd_req_t *req, int request_id, const cJSON *
 
 static void factory_reset_cb(TimerHandle_t t)
 {
+    // Erase NVS (both config and secrets)
     nvs_flash_erase();
     nvs_flash_init();
+
+    // Remove config file
+    remove("/user/config.json");
+
     esp_restart();
 }
 static esp_err_t ws_handle_factory_reset(httpd_req_t *req, int request_id, const cJSON *payload)
@@ -355,7 +381,8 @@ static esp_err_t _ws_save_econet_clock(httpd_req_t *req, int request_id, const c
         .invert_clock = cJSON_IsTrue(invert),
     };
 
-    config_save_econet_clock(&clock_cfg);
+    config_set_econet_clock(&clock_cfg);
+    config_save();
 
     econet_clock_reconfigure();
 
@@ -365,7 +392,7 @@ static esp_err_t _ws_save_econet_clock(httpd_req_t *req, int request_id, const c
 static esp_err_t _ws_get_econet_clock(httpd_req_t *req, int request_id, const cJSON *payload)
 {
     config_econet_clock_t clock_cfg;
-    config_load_econet_clock(&clock_cfg);
+    config_get_econet_clock(&clock_cfg);
 
     char response[256];
     snprintf(response, sizeof(response),
@@ -399,9 +426,6 @@ static const struct
     {"save_econet", _ws_save_econet},
     {"get_econet_clock", _ws_get_econet_clock},
     {"save_econet_clock", _ws_save_econet_clock},
-    {"get_econet_uplinks", _ws_get_econet},
-    {"save_econet_uplinks", _ws_save_econet},
-
 };
 
 static esp_err_t _ws_dispatch(httpd_req_t *req, const char *type, int id, const cJSON *payload)

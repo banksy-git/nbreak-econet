@@ -354,12 +354,14 @@ void trunk_rx_process(trunk_t *trunk)
     _encrypt_and_send_using_workspace(trunk, packet, sizeof(hdr), sizeof(udp_rx_buffer) - CRYPT_WORKSPACE_SIZE, CRYPT_WORKSPACE_SIZE);
 }
 
-static esp_err_t _configure_trunk(config_trunk_t *cfg)
+static void _setup_trunk(void *ctx, const config_trunk_t *cfg)
 {
+    (void)ctx;
+
     if (trunk_count >= ARRAY_SIZE(trunks))
     {
         ESP_LOGW(TAG, "Too many trunk configurations (max %d)", ARRAY_SIZE(trunks));
-        return ESP_ERR_NO_MEM;
+        return;
     }
 
     trunk_t *trunk = &trunks[trunk_count];
@@ -380,7 +382,7 @@ static esp_err_t _configure_trunk(config_trunk_t *cfg)
     if (trunk->socket < 0)
     {
         ESP_LOGE(TAG, "Failed to create socket for trunk %d: errno %d", trunk_count, errno);
-        return ESP_FAIL;
+        return;
     }
 
     trunk->is_open = true;
@@ -389,8 +391,6 @@ static esp_err_t _configure_trunk(config_trunk_t *cfg)
 
     ESP_LOGI(TAG, "Configured trunk %d: %s:%d", trunk_count, trunk->remote_address, trunk->remote_udp_port);
     trunk_count++;
-
-    return ESP_OK;
 }
 
 void trunk_reconfigure(void)
@@ -406,11 +406,9 @@ void trunk_reconfigure(void)
     }
     trunk_count = 0;
 
-    // Set default network number (will be overridden if in config)
-    trunk_our_net = 0;
-
     // Load configuration from config file
-    config_load_econet(NULL, NULL, _configure_trunk);
+    trunk_our_net = config_get_trunk_network();
+    config_foreach_trunk(_setup_trunk, NULL);
 
     // If still zero after loading config, use default
     if (trunk_our_net == 0)
