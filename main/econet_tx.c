@@ -20,6 +20,7 @@
 #include "driver/parlio_tx.h"
 #include "driver/gpio.h"
 
+#include "config.h"
 #define ECONET_PRIVATE_API
 #include "econet.h"
 
@@ -400,11 +401,21 @@ void econet_tx_setup(void)
 
 void econet_tx_start(void)
 {
-    // Hack: The .sample_edge parameter doesn't actually work.
-    // Whatever you set it to it always seems to make output changes on the POS edge
-    // So this function uses the GPIO matrix to invert the clock signal prior to
-    // delivery to the peripheral.
-    parlio_tx_neg_edge(tx_unit);
+    // Load clock configuration to check if we should invert the clock
+    config_econet_clock_t clock_cfg;
+    config_load_econet_clock(&clock_cfg);
+
+    // When invert_clock is false (default), we invert via GPIO matrix to work around
+    // the broken .sample_edge parameter. When invert_clock is true, we disable this
+    // inversion so the output clock is not inverted.
+    if (!clock_cfg.invert_clock)
+    {
+        // Hack: The .sample_edge parameter doesn't actually work.
+        // Whatever you set it to it always seems to make output changes on the POS edge
+        // So this function uses the GPIO matrix to invert the clock signal prior to
+        // delivery to the peripheral.
+        parlio_tx_neg_edge(tx_unit);
+    }
 
     ESP_ERROR_CHECK(parlio_tx_unit_enable(tx_unit));
     xTaskCreate(_tx_task, "adlc_tx", 8192, NULL, 24, NULL);

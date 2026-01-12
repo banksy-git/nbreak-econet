@@ -288,6 +288,7 @@ esp_err_t config_load_econet_clock(config_econet_clock_t *cfg)
         cfg->duty_pc = 50;
         cfg->frequency_hz = 100000;
         cfg->mode = ECONET_CLOCK_INTERNAL;
+        cfg->invert_clock = false;
     }
     return ESP_OK;
 }

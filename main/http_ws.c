@@ -19,6 +19,7 @@
 #include "esp_log.h"
 #include "http.h"
 #include "wifi.h"
+#include <inttypes.h>
 
 static const char *TAG = "ws";
 
@@ -335,6 +336,7 @@ static esp_err_t _ws_save_econet_clock(httpd_req_t *req, int request_id, const c
     const cJSON *mode = cJSON_GetObjectItemCaseSensitive(settings, "mode");
     const cJSON *freq = cJSON_GetObjectItemCaseSensitive(settings, "internalFrequencyHz");
     const cJSON *duty = cJSON_GetObjectItemCaseSensitive(settings, "internalDutyCycle");
+    const cJSON *invert = cJSON_GetObjectItemCaseSensitive(settings, "invertClock");
 
     if (!cJSON_IsString(mode) || !cJSON_IsNumber(freq) || !cJSON_IsNumber(duty))
     {
@@ -350,6 +352,7 @@ static esp_err_t _ws_save_econet_clock(httpd_req_t *req, int request_id, const c
         .mode = !strcmp(mode->valuestring, "internal") ? ECONET_CLOCK_INTERNAL : ECONET_CLOCK_EXTERNAL,
         .frequency_hz = freq->valueint,
         .duty_pc = duty->valueint,
+        .invert_clock = cJSON_IsTrue(invert),
     };
 
     config_save_econet_clock(&clock_cfg);
@@ -369,13 +372,15 @@ static esp_err_t _ws_get_econet_clock(httpd_req_t *req, int request_id, const cJ
              "{\"type\":\"response\",\"id\": %d, \"ok\":true,"
              "\"settings\": {"
              "\"mode\": \"%s\","
-             "\"internalFrequencyHz\": %lu,"
-             "\"internalDutyCycle\": %lu"
+             "\"internalFrequencyHz\": %" PRIu32 ","
+             "\"internalDutyCycle\": %" PRIu32 ","
+             "\"invertClock\": %s"
              "}}",
              request_id,
              clock_cfg.mode == ECONET_CLOCK_INTERNAL ? "internal" : "external",
              clock_cfg.frequency_hz,
-             clock_cfg.duty_pc);
+             clock_cfg.duty_pc,
+             clock_cfg.invert_clock ? "true" : "false");
     return _ws_send(req, response);
 }
 

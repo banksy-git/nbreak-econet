@@ -36,6 +36,7 @@ typedef struct
     uint32_t frequency_hz;
     uint32_t duty_pc;
     econet_clock_mode_t mode;
+    bool invert_clock;
 } config_econet_clock_t;
 
 typedef struct

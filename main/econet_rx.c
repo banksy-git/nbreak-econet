@@ -19,6 +19,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 
+#include "config.h"
 #define ECONET_PRIVATE_API
 #include "econet.h"
 #include "utils.h"
@@ -251,6 +252,10 @@ bool econet_rx_is_idle(void)
 
 void econet_rx_setup(void)
 {
+    // Load clock configuration to check if we should invert the clock
+    config_econet_clock_t clock_cfg;
+    config_load_econet_clock(&clock_cfg);
+
     parlio_rx_unit_config_t rx_config = {
         .trans_queue_depth = sizeof(rx_payload_dma_buffer),
         .max_recv_size = 1,
@@ -277,8 +282,11 @@ void econet_rx_setup(void)
     };
     ESP_ERROR_CHECK(parlio_new_rx_unit(&rx_config, &rx_unit));
 
+    // When invert_clock is false (default), TX inverts the clock via GPIO matrix,
+    // so RX must sample on the negative edge. When invert_clock is true, TX doesn't
+    // invert, so RX should sample on the positive edge to maintain correct polarity.
     parlio_rx_soft_delimiter_config_t delimiter_cfg = {
-        .sample_edge = PARLIO_SAMPLE_EDGE_NEG, // Is this inverted in hardware? Docs are clear as mud.
+        .sample_edge = clock_cfg.invert_clock ? PARLIO_SAMPLE_EDGE_POS : PARLIO_SAMPLE_EDGE_NEG,
         .bit_pack_order = PARLIO_BIT_PACK_ORDER_MSB,
         .timeout_ticks = 0,
         .eof_data_len = 1,

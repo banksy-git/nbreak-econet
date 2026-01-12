@@ -8,6 +8,7 @@
       mode: "internal",
       internalFrequencyHz: 100000,
       internalDutyCycle: 50,
+      invertClock: false,
     };
   
     let loading = true;
@@ -178,6 +179,16 @@
       The officially published Econet documentation is inconsistent when describing the polarity of the clock differential lines.
       This lets you invert the clock if the wiring is inverted.
     </p>
+
+    <label class="inline-flex items-center gap-2 cursor-pointer">
+      <input
+        type="checkbox"
+        bind:checked={clockSettings.invertClock}
+        disabled={formDisabled}
+        class="rounded border-gray-300"
+      />
+      <span class="text-sm">Invert clock polarity</span>
+    </label>
   
     <!-- Save button + status -->
     <div class="pt-2 flex items-center gap-3">

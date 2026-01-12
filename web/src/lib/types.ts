@@ -71,11 +71,12 @@ export type EconetSettings = {
 };
 
 export type ClockMode = "internal" | "external";
-  
+
 export type EconetClockSettings = {
   mode: ClockMode;
   internalFrequencyHz: number;
   internalDutyCycle: number; // percent, 0–100
+  invertClock?: boolean;
 };
 
 export type StatsStreamPayload = {
