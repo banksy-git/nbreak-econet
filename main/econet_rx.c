@@ -17,13 +17,14 @@
 #include "freertos/message_buffer.h"
 #include "driver/parlio_rx.h"
 #include "driver/gpio.h"
+#include "esp_log.h"
 
 #define ECONET_PRIVATE_API
 #include "econet.h"
+#include "utils.h"
 
 #define ECONET_IDLE_BITS 15
 #define ECONET_PACKET_BUFFER_COUNT 3
-#define ECONET_BUFFER_WORKSPACE 4
 
 QueueHandle_t DRAM_ATTR econet_rx_packet_queue;
 uint32_t DRAM_ATTR rx_ack_wait_time;
@@ -36,35 +37,16 @@ static uint8_t DRAM_ATTR _raw_shift_in;
 static uint8_t DRAM_ATTR _recv_data_shift_in;
 static uint32_t DRAM_ATTR _recv_data_bit;
 static uint32_t DRAM_ATTR is_frame_active;
-static uint8_t DRAM_ATTR rx_packet_buffers[ECONET_PACKET_BUFFER_COUNT][ECONET_MTU + ECONET_BUFFER_WORKSPACE];
+static uint8_t DRAM_ATTR rx_packet_buffers[ECONET_PACKET_BUFFER_COUNT][ECONET_RX_BUFFER_WORKSPACE + ECONET_MTU + 16];
 static uint8_t *DRAM_ATTR rx_buf;
 static uint32_t DRAM_ATTR rx_packet_buffer_index;
 static uint16_t DRAM_ATTR rx_frame_len;
 static uint16_t DRAM_ATTR rx_crc;
 static uint8_t DRAM_ATTR rx_idle_one_counter;
 
-typedef struct
-{
-    uint32_t w[8];
-} bitmap256_t;
-
 // These bitmaps determine which stations or networks we answer for on the Econet
-static DRAM_ATTR bitmap256_t rx_station_bitmap;
-static DRAM_ATTR bitmap256_t rx_network_bitmap;
-
-static inline bool bm256_test(const bitmap256_t *bm, uint8_t bit)
-{
-    uint32_t word = bit >> 5;
-    uint32_t offset = bit & 31;
-    return (bm->w[word] >> offset) & 1u;
-}
-
-static inline void bm256_set(bitmap256_t *bm, uint8_t bit)
-{
-    uint32_t word = bit >> 5;
-    uint32_t offset = bit & 31;
-    bm->w[word] |= (1u << offset);
-}
+static volatile DRAM_ATTR bitmap256_t rx_station_bitmap;
+static volatile DRAM_ATTR bitmap256_t rx_network_bitmap;
 
 static inline void IRAM_ATTR _begin_frame(void)
 {
@@ -76,9 +58,6 @@ static inline void IRAM_ATTR _begin_frame(void)
 
 static inline void IRAM_ATTR _complete_frame()
 {
-    gpio_set_level(19, 1);
-    gpio_set_level(19, 0);
-
     is_frame_active = 0;
 
     if (rx_frame_len < 6)
@@ -127,7 +106,7 @@ static inline void IRAM_ATTR _complete_frame()
             {
                 rx_packet_buffer_index = 0;
             }
-            rx_buf = &rx_packet_buffers[rx_packet_buffer_index][ECONET_BUFFER_WORKSPACE];
+            rx_buf = &rx_packet_buffers[rx_packet_buffer_index][ECONET_RX_BUFFER_WORKSPACE];
 
             rx_ack_wait_time = esp_cpu_get_cycle_count();
         }
@@ -143,9 +122,6 @@ static inline void IRAM_ATTR _complete_frame()
                 .src_stn = rx_buf[2],
                 .src_net = rx_buf[3]};
             xQueueSendFromISR(tx_command_queue, &ack_cmd, &is_awoken);
-
-            gpio_set_level(19, 1);
-            gpio_set_level(19, 0);
         }
 
         portYIELD_FROM_ISR(is_awoken);
@@ -258,14 +234,12 @@ static inline void IRAM_ATTR _clk_bit(uint8_t c)
 
 static bool IRAM_ATTR _on_recv_callback(parlio_rx_unit_handle_t rx_unit, const parlio_rx_event_data_t *edata, void *user_data)
 {
-    gpio_set_level(18, 1);
     uint8_t c = *((uint8_t *)edata->data);
     for (int i = 0; i < 8; i++)
     {
         _clk_bit((c & 0x80) >> 7);
         c <<= 1;
     }
-    gpio_set_level(18, 0);
 
     return false;
 }
@@ -318,7 +292,7 @@ void econet_rx_setup(void)
 
     econet_rx_packet_queue = xQueueCreate(4, sizeof(econet_rx_packet_t));
     rx_packet_buffer_index = 0;
-    rx_buf = &rx_packet_buffers[rx_packet_buffer_index][ECONET_BUFFER_WORKSPACE];
+    rx_buf = &rx_packet_buffers[rx_packet_buffer_index][ECONET_RX_BUFFER_WORKSPACE];
 }
 
 void econet_rx_start(void)
@@ -341,16 +315,28 @@ void econet_rx_start(void)
 
 void econet_rx_clear_bitmaps(void)
 {
-    memset(&rx_station_bitmap, 0, sizeof(rx_station_bitmap));
-    memset(&rx_network_bitmap, 0, sizeof(rx_network_bitmap));
+    bm256_reset(&rx_station_bitmap);
+    bm256_reset(&rx_network_bitmap);
+    ESP_LOGI(TAG, "Stopped listening on all nets");
 }
 
-void exonet_rx_enable_station(uint8_t station_id)
+void econet_rx_enable_station(uint8_t station_id)
 {
     bm256_set(&rx_station_bitmap, station_id);
 }
 
-void exonet_rx_enable_network(uint8_t network_id)
+void econet_rx_set_networks(bitmap256_t *nets)
 {
-    bm256_set(&rx_network_bitmap, network_id);
+    for (int i = 0; i < 255; i++)
+    {
+        if (bm256_test(&rx_network_bitmap, i) && !bm256_test(nets, i))
+        {
+            ESP_LOGI(TAG, "Stopped listening on net %d", i);
+        }
+        if (!bm256_test(&rx_network_bitmap, i) && bm256_test(nets, i))
+        {
+            ESP_LOGI(TAG, "Listening on net %d", i);
+        }
+    }
+    rx_network_bitmap = *nets;
 }

@@ -14,14 +14,16 @@
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
+#include "utils.h"
 #include "config.h"
 #include "econet.h"
 #include "aun_bridge.h"
-
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+#include "trunk.h"
 
 aunbridge_stats_t aunbridge_stats;
+uint8_t udp_rx_buffer[ECONET_MTU + 64];
 
 static const char *TAG = "AUN";
 static const char *ECONETTAG = "ECONET";
@@ -106,26 +108,25 @@ static bool _econet_rx(econet_rx_packet_t *pkt, uint32_t timeout)
     return true;
 }
 
-static bool _aun_wait_ack(uint32_t seq)
+void aunbridge_signal_ack(uint32_t seq)
 {
-    aun_hdr_t ack;
+    xQueueSend(ack_queue, &seq, 0);
+}
+
+bool aunbridge_wait_ack(uint32_t seq)
+{
+    uint32_t ack_seq;
     for (int i = 0; i < 5; i++)
     {
-        if (xQueueReceive(ack_queue, &ack, 200) == pdPASS)
+        if (xQueueReceive(ack_queue, &ack_seq, 500) == pdPASS)
         {
-            uint32_t ack_seq =
-                ack.sequence[0] |
-                (ack.sequence[1] << 8) |
-                (ack.sequence[2] << 16) |
-                (ack.sequence[3] << 24);
-
             if (ack_seq == seq)
             {
                 return true;
             }
             else
             {
-                ESP_LOGW(TAG, "Ignoring out-of-sequence ACK");
+                ESP_LOGW(TAG, "Ignoring out-of-sequence ACK received=0x%x expecting=0x%x", ack_seq, seq);
             }
         }
         else
@@ -147,7 +148,7 @@ static void _aun_econet_rx_task(void *params)
 
     for (;;)
     {
-        // Get scout
+        // Get scout / immediate frame
         _econet_rx(&econet_pkt, portMAX_DELAY);
         if (econet_pkt.type == 'I')
         {
@@ -158,11 +159,11 @@ static void _aun_econet_rx_task(void *params)
             ESP_LOGW(ECONETTAG, "Unexpected short scout frame (len=%d) discarded", econet_pkt.length);
             continue;
         }
-        memcpy(&scout, econet_pkt.data + 4, sizeof(scout));
+        memcpy(&scout, econet_pkt.data + ECONET_RX_BUFFER_WORKSPACE, sizeof(scout));
         if (econet_pkt.length != 6)
         {
-            ESP_LOGW(ECONETTAG, "Expected scout but got a %d byte frame from %d.%d to %d.%d. Discarding",
-                     econet_pkt.length, scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn);
+            ESP_LOGW(ECONETTAG, "Expected scout but got a %d byte frame from %d.%d to %d.%d. (P0x%x C0x%x) Discarding",
+                     econet_pkt.length, scout.hdr.src_net, scout.hdr.src_stn, scout.hdr.dst_net, scout.hdr.dst_stn, scout.port, scout.control);
             continue;
         }
 
@@ -184,7 +185,7 @@ static void _aun_econet_rx_task(void *params)
             ESP_LOGW(ECONETTAG, "Unexpected short frame discarded");
             continue;
         }
-        memcpy(&econet_hdr, econet_pkt.data + 4, sizeof(econet_hdr));
+        memcpy(&econet_hdr, econet_pkt.data + ECONET_RX_BUFFER_WORKSPACE, sizeof(econet_hdr));
         ESP_LOGI(ECONETTAG, "Data packet %d bytes from %d.%d to %d.%d (ctrl=0x%x, port=0x%x)",
                  econet_pkt.length - 4,
                  econet_hdr.src_net, econet_hdr.src_stn,
@@ -193,7 +194,15 @@ static void _aun_econet_rx_task(void *params)
 
         if (memcmp(&econet_hdr, &scout, sizeof(econet_hdr)) != 0)
         {
-            ESP_LOGW(ECONETTAG, "Address mismatch on scout/data packet");
+            ESP_LOGW(ECONETTAG, "Address mismatch on scout/data packet. Discarded.");
+            continue;
+        }
+
+        // See if trunk wants this packet.
+        if (trunk_tx_packet(&scout,
+                            econet_pkt.data + ECONET_RX_BUFFER_WORKSPACE, econet_pkt.length, ECONET_MTU + 16, ECONET_RX_BUFFER_WORKSPACE))
+        {
+            continue;
         }
 
         econet_station_t *econet_station = _get_econet_station_by_id(econet_hdr.src_stn);
@@ -220,7 +229,7 @@ static void _aun_econet_rx_task(void *params)
 
         rx_seq += 4;
 
-        uint8_t *aun_packet = econet_pkt.data;
+        uint8_t *aun_packet = econet_pkt.data + ECONET_RX_BUFFER_WORKSPACE - 4;
         int retries = 5;
         while (--retries > 0)
         {
@@ -241,7 +250,7 @@ static void _aun_econet_rx_task(void *params)
                 aunbridge_stats.tx_error_count++;
             }
 
-            if (_aun_wait_ack(rx_seq))
+            if (aunbridge_wait_ack(rx_seq))
             {
                 break;
             }
@@ -260,10 +269,9 @@ static void _aun_econet_rx_task(void *params)
 
 static void _aun_udp_rx_process(econet_station_t *econet_station)
 {
-    static uint8_t aun_rx_buffer[ECONET_MTU];
     struct sockaddr_in source_addr;
     socklen_t socklen = sizeof(source_addr);
-    int len = recvfrom(econet_station->socket, aun_rx_buffer, sizeof(aun_rx_buffer), 0,
+    int len = recvfrom(econet_station->socket, udp_rx_buffer, sizeof(udp_rx_buffer), 0,
                        (struct sockaddr *)&source_addr, &socklen);
     if (len < 0)
     {
@@ -271,7 +279,15 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
         return;
     }
 
-    switch (aun_rx_buffer[0])
+    aun_hdr_t hdr;
+    memcpy(&hdr, udp_rx_buffer, sizeof(hdr));
+    uint32_t ack_seq =
+        hdr.sequence[0] |
+        (hdr.sequence[1] << 8) |
+        (hdr.sequence[2] << 16) |
+        (hdr.sequence[3] << 24);
+
+    switch (hdr.transaction_type)
     {
     case AUN_TYPE_IMM:
         aunbridge_stats.rx_imm_count++;
@@ -281,14 +297,14 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
         break;
     case AUN_TYPE_ACK:
         aunbridge_stats.rx_ack_count++;
-        xQueueSend(ack_queue, aun_rx_buffer, 0);
+        aunbridge_signal_ack(ack_seq);
         return;
     case AUN_TYPE_NACK:
         aunbridge_stats.rx_nack_count++;
-        xQueueSend(ack_queue, aun_rx_buffer, 0);
+        aunbridge_signal_ack(ack_seq);
         return;
     default:
-        ESP_LOGW(TAG, "Received AUN packet of unknown type 0x%02x. Ignored.", aun_rx_buffer[0]);
+        ESP_LOGW(TAG, "Received AUN packet of unknown type 0x%02x. Ignored.", udp_rx_buffer[0]);
         aunbridge_stats.rx_unknown_count++;
         return;
     }
@@ -301,15 +317,7 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
         return;
     }
 
-    aun_hdr_t hdr;
-    memcpy(&hdr, aun_rx_buffer, sizeof(hdr));
-    uint32_t ack_seq =
-        hdr.sequence[0] |
-        (hdr.sequence[1] << 8) |
-        (hdr.sequence[2] << 16) |
-        (hdr.sequence[3] << 24);
-
-    if (aun_rx_buffer[0] == AUN_TYPE_IMM)
+    if (udp_rx_buffer[0] == AUN_TYPE_IMM)
     {
         // MACHINETYPE - TODO: We should forward this but need some other
         //  stuff first because IMM is handled differently. This is to
@@ -320,9 +328,9 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
             dest_addr.sin_addr.s_addr = inet_addr(aun_station->remote_address);
             dest_addr.sin_family = AF_INET;
             dest_addr.sin_port = htons(aun_station->udp_port);
-            memcpy(aun_rx_buffer, &hdr, sizeof(hdr));
-            aun_rx_buffer[0] = AUN_TYPE_IMM_REPLY;
-            sendto(econet_station->socket, aun_rx_buffer, 12, 0,
+            memcpy(udp_rx_buffer, &hdr, sizeof(hdr));
+            udp_rx_buffer[0] = AUN_TYPE_IMM_REPLY;
+            sendto(econet_station->socket, udp_rx_buffer, 12, 0,
                    (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             ESP_LOGI(TAG, "Responded to MACHINETYPE request without forwarding.");
         }
@@ -335,24 +343,25 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
     }
 
     // Change AUN header to Econet style
-    aun_rx_buffer[2] = econet_station->station_id;
-    aun_rx_buffer[3] = 0x00;
-    aun_rx_buffer[4] = aun_station->station_id;
-    aun_rx_buffer[5] = 0x00;
-    aun_rx_buffer[6] = hdr.econet_control | 0x80;
-    aun_rx_buffer[7] = hdr.econet_port;
+    len -= 2;
+    udp_rx_buffer[2] = econet_station->station_id;
+    udp_rx_buffer[3] = 0x00;
+    udp_rx_buffer[4] = aun_station->station_id;
+    udp_rx_buffer[5] = 0x00;
+    udp_rx_buffer[6] = hdr.econet_control | 0x80;
+    udp_rx_buffer[7] = hdr.econet_port;
 
     // Send to Beeb (but only if we didn't get acknowledgement before for this packet.)
     // NOTE: We're not encountering out of order but if we do then we'll need a different strategy to reorder them.
     if (ack_seq != aun_station->last_acked_seq || aun_station->last_tx_result == ECONET_NACK)
     {
-        ESP_LOGI(TAG, "[%05d] Sending %d byte frame from %d.%d (%s) to Econet %d.%d",
+        ESP_LOGI(TAG, "[%05d] Delivering %d byte frame from %d.%d (%s) to Econet %d.%d",
                  ack_seq, len,
                  aun_station->network_id, aun_station->station_id,
                  inet_ntoa(source_addr.sin_addr),
                  econet_station->network_id, econet_station->station_id);
 
-        aun_station->last_tx_result = econet_send(&aun_rx_buffer[2], len - 2);
+        aun_station->last_tx_result = econet_send(&udp_rx_buffer[2], len);
         aun_station->last_acked_seq = ack_seq;
     }
     else
@@ -361,7 +370,7 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
     }
 
     // Send AUN ack/nack
-    if (aun_station->last_tx_result==ECONET_ACK)
+    if (aun_station->last_tx_result == ECONET_ACK)
     {
         hdr.transaction_type = AUN_TYPE_ACK;
         aunbridge_stats.tx_ack_count++;
@@ -377,15 +386,16 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
     dest_addr.sin_addr.s_addr = inet_addr(aun_station->remote_address);
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_port = htons(aun_station->udp_port);
-    memcpy(aun_rx_buffer, &hdr, sizeof(hdr));
-    sendto(econet_station->socket, aun_rx_buffer, 8, 0,
+    memcpy(udp_rx_buffer, &hdr, sizeof(hdr));
+    sendto(econet_station->socket, udp_rx_buffer, 8, 0,
            (struct sockaddr *)&dest_addr, sizeof(dest_addr));
 }
 
 static void _aun_udp_rx_task(void *params)
 {
+    ESP_LOGI(TAG, "Waiting for UDP packets...");
 
-    ESP_LOGI(TAG, "Waiting for AUN packets...");
+    int64_t last_tick_time = esp_timer_get_time();
 
     for (;;)
     {
@@ -404,8 +414,20 @@ static void _aun_udp_rx_task(void *params)
                 }
             }
         }
+        for (int i = 0; i < ARRAY_SIZE(trunks); i++)
+        {
+            if (trunks[i].is_open)
+            {
+                FD_SET(trunks[i].socket, &rfds);
+                if (trunks[i].socket > max_fd)
+                {
+                    max_fd = trunks[i].socket;
+                }
+            }
+        }
 
-        int err = select(max_fd + 1, &rfds, NULL, NULL, NULL);
+        struct timeval tv = {.tv_sec = 1};
+        int err = select(max_fd + 1, &rfds, NULL, NULL, &tv);
         if (err < 0)
         {
             ESP_LOGE(TAG, "select error: errno %d", errno);
@@ -428,6 +450,26 @@ static void _aun_udp_rx_task(void *params)
             {
                 _aun_udp_rx_process(&econet_stations[i]);
             }
+        }
+
+        for (int i = 0; i < ARRAY_SIZE(trunks); i++)
+        {
+            if (!trunks->is_open)
+            {
+                continue;
+            }
+            if (FD_ISSET(trunks[i].socket, &rfds))
+            {
+                trunk_rx_process(&trunks[i]);
+            }
+        }
+
+        // Process periodic activity (keepalives, etc)
+        int64_t now_us = esp_timer_get_time();
+        if (now_us - last_tick_time > 1000000LL)
+        {
+            trunk_tick();
+            last_tick_time = now_us;
         }
     }
 }
@@ -545,7 +587,7 @@ void aunbridge_reconfigure(void)
     }
 
     // Load configuration from config file
-    config_load_econet(_open_econet_station, _alloc_aun_station);
+    config_load_econet(_open_econet_station, _alloc_aun_station, NULL);
 
     // Enable Econet RX for the AUN stations
     econet_rx_clear_bitmaps();
@@ -553,9 +595,11 @@ void aunbridge_reconfigure(void)
     {
         if (aun_stations[i].station_id != 0)
         {
-            exonet_rx_enable_station(aun_stations[i].station_id);
+            econet_rx_enable_station(aun_stations[i].station_id);
         }
     }
+
+    trunk_reconfigure();
 
     // Start receivers
     xTaskCreate(_aun_udp_rx_task, "aun_udp_rx", 4096, NULL, 1, NULL);
@@ -565,7 +609,7 @@ void aunbridge_reconfigure(void)
 
 void aunbrige_start(void)
 {
-    ack_queue = xQueueCreate(10, sizeof(aun_hdr_t));
+    ack_queue = xQueueCreate(10, sizeof(uint32_t));
     pipe(rx_udp_ctl_pipe); // Ugh. I feel dirty using sockets on embedded!
     is_running = false;
     aunbridge_reconfigure();

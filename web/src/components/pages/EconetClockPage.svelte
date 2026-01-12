@@ -82,8 +82,7 @@
     <h2 class="text-sm font-semibold mb-1">Econet Clock Configuration</h2>
   
     <p class="text-xs text-gray-600">
-      The maximum tested Econet clock is <span class="font-semibold">200&nbsp;kHz</span>.
-      Higher frequencies may cause unreliable operation.
+      Configure the Econet clock parameters here.
     </p>
   
     <!-- Mode selection -->
@@ -133,7 +132,7 @@
   
       <p class="text-xs text-gray-500">
         Configure the internal clock frequency and duty cycle. The maximum tested
-        frequency is <span class="font-semibold">200&nbsp;kHz</span> (200&nbsp;000&nbsp;Hz).
+        frequency is <span class="font-semibold">150&nbsp;kHz</span> (150&nbsp;000&nbsp;Hz).
       </p>
   
       <div class="grid grid-cols-1 gap-3">
@@ -170,6 +169,15 @@
         </label>
       </div>
     </div>
+
+    <p class="font-medium text-xs uppercase tracking-wide text-gray-500">
+      Clock inversion
+    </p>
+
+    <p class="text-xs text-gray-600">
+      The officially published Econet documentation is inconsistent when describing the polarity of the clock differential lines.
+      This lets you invert the clock if the wiring is inverted.
+    </p>
   
     <!-- Save button + status -->
     <div class="pt-2 flex items-center gap-3">

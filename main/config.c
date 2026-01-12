@@ -118,7 +118,7 @@ cJSON *config_load_econet_json(void)
     return root;
 }
 
-esp_err_t config_load_econet(config_cb_econet_station eco_cb, config_cb_aun_station aun_cb)
+esp_err_t config_load_econet(config_cb_econet_station eco_cb, config_cb_aun_station aun_cb, config_cb_trunk trunk_cb)
 {
     FILE *fp = fopen(ECONET_CONFIG_FILE, "r");
     if (!fp)
@@ -149,7 +149,7 @@ esp_err_t config_load_econet(config_cb_econet_station eco_cb, config_cb_aun_stat
 
     // Configure Econet stations
     cJSON *cfgs = cJSON_GetObjectItemCaseSensitive(root, "econetStations");
-    if (cfgs)
+    if (cfgs && eco_cb)
     {
         for (cJSON *item = cfgs->child; item != NULL; item = item->next)
         {
@@ -172,7 +172,7 @@ esp_err_t config_load_econet(config_cb_econet_station eco_cb, config_cb_aun_stat
     }
 
     cfgs = cJSON_GetObjectItemCaseSensitive(root, "aunStations");
-    if (cfgs)
+    if (cfgs && aun_cb)
     {
         for (cJSON *item = cfgs->child; item != NULL; item = item->next)
         {
@@ -197,6 +197,65 @@ esp_err_t config_load_econet(config_cb_econet_station eco_cb, config_cb_aun_stat
         }
     }
 
+    // Load trunk network number
+    cJSON *trunk_net = cJSON_GetObjectItemCaseSensitive(root, "trunkOurNet");
+    if (trunk_net && cJSON_IsNumber(trunk_net))
+    {
+        extern uint8_t trunk_our_net;
+        trunk_our_net = (uint8_t)trunk_net->valueint;
+    }
+
+    // Configure trunk uplinks
+    cfgs = cJSON_GetObjectItemCaseSensitive(root, "trunks");
+    if (cfgs && trunk_cb)
+    {
+        for (cJSON *item = cfgs->child; item != NULL; item = item->next)
+        {
+            cJSON *remote_ip = cJSON_GetObjectItem(item, "remote_ip");
+            cJSON *udp_port = cJSON_GetObjectItem(item, "udp_port");
+            cJSON *aes_key = cJSON_GetObjectItem(item, "aes_key");
+
+            bool is_ok = cJSON_IsString(remote_ip) &&
+                         cJSON_IsNumber(udp_port) &&
+                         cJSON_IsString(aes_key);
+
+            if (is_ok && udp_port->valueint && remote_ip->valuestring && aes_key->valuestring)
+            {
+                config_trunk_t cfg = {
+                    .udp_port = udp_port->valueint,
+                    .key_len = 0};
+                snprintf(cfg.remote_address, sizeof(cfg.remote_address), "%s", remote_ip->valuestring);
+
+                // Copy key string as ASCII bytes (up to 32 bytes for AES-256)
+                // The key is treated as raw ASCII, not hex-encoded
+                const char *key_str = aes_key->valuestring;
+                size_t key_str_len = strlen(key_str);
+
+                if (key_str_len > 0)
+                {
+                    // Copy up to 32 bytes from the string
+                    size_t copy_len = key_str_len < sizeof(cfg.key) ? key_str_len : sizeof(cfg.key);
+                    memcpy(cfg.key, key_str, copy_len);
+
+                    // Zero-pad the rest to make a full 32-byte key (required for AES-256)
+                    if (copy_len < sizeof(cfg.key))
+                    {
+                        memset(cfg.key + copy_len, 0, sizeof(cfg.key) - copy_len);
+                    }
+
+                    // Key length is always 32 bytes after padding
+                    cfg.key_len = sizeof(cfg.key);
+
+                    trunk_cb(&cfg);
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "Trunk configuration skipped: empty encryption key");
+                }
+            }
+        }
+    }
+
     cJSON_Delete(root);
 
     return ESP_OK;
@@ -214,12 +273,12 @@ void config_init(void)
     config_load_wifi();
 }
 
-esp_err_t config_save_econet_clock(const config_econet_clock_t* cfg)
+esp_err_t config_save_econet_clock(const config_econet_clock_t *cfg)
 {
     return _save_config("econet_clock", cfg, sizeof(*cfg));
 }
 
-esp_err_t config_load_econet_clock(config_econet_clock_t* cfg)
+esp_err_t config_load_econet_clock(config_econet_clock_t *cfg)
 {
     esp_err_t err = _load_config("econet_clock", cfg, sizeof(*cfg));
     if (err != ESP_OK)
@@ -232,5 +291,3 @@ esp_err_t config_load_econet_clock(config_econet_clock_t* cfg)
     }
     return ESP_OK;
 }
-
-

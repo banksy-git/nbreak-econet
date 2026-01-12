@@ -57,9 +57,17 @@ export interface AUNRow {
   station_id: number;
 };
 
+export interface TrunkRow {
+  remote_ip: string;
+  udp_port: number;
+  aes_key: string;
+};
+
 export type EconetSettings = {
   econetStations?: ECSRow[];
   aunStations?: AUNRow[];
+  trunks?: TrunkRow[];
+  trunkOurNet?: number;
 };
 
 export type ClockMode = "internal" | "external";
@@ -90,7 +98,9 @@ export type ClientMessage =
   | { type: "reboot"; id: number }
   | { type: "factory_reset"; id: number }
   | { type: "save_econet_clock"; id: number, settings: EconetClockSettings }
-  | { type: "get_econet_clock"; id: number };
+  | { type: "get_econet_clock"; id: number }
+  | { type: "save_econet_uplinks"; id: number, settings: EconetSettings }
+  | { type: "get_econet_uplinks"; id: number };
 
 
 

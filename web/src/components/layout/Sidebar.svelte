@@ -9,6 +9,7 @@
   import EconetClockPage from "../pages/EconetClockPage.svelte";
   import SystemPage from "../pages/SystemPage.svelte";
   import LogsPage from "../pages/LogsPage.svelte";
+  import EconetUplinks from "../pages/EconetUplinks.svelte";
 
   export let mobileSidebarOpen = false;
   export let closeSidebar;
@@ -17,6 +18,7 @@
     { id: "status", label: "Status", component: StatusPage, icon: "gridicons--stats-up"},
     { id: "econet", label: "Econet and AUN", component: EconetPage,  icon: "lucide--network" },
     { id: "eclock", label: "Econet Clock", component: EconetClockPage,  icon: "meteor-icons--wave-square" },
+    { id: "euplink", label: "Econet Uplinks", component: EconetUplinks,  icon: "mdi--satellite-uplink" },
     { id: "wifi", label: "WiFi network", component: WifiPage, icon: "mdi--wifi" },
     { id: "wifi_ap", label: "WiFi access point", component: WifiApPage, icon: "mdi--access-point" },
     { id: "system", label: "System", component: SystemPage, icon: "hugeicons--gears"},

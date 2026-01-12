@@ -323,8 +323,16 @@ econet_acktype_t econet_send(uint8_t *data, uint16_t length)
 {
     tx_sender_task = xTaskGetCurrentTaskHandle();
 
-    // Generate scout frame
-    scout_bits_len = _generate_frame_bits(scout_bits, sizeof(scout_bits), data, 6);
+    // Generate scout
+    econet_scout_t scout;
+    memcpy(&scout, data, sizeof(scout));
+    if (scout.port == 0)
+    {
+        ESP_LOGW(TAG, "Discarded immediate mode packet. (TX)");
+        return ECONET_SEND_ERROR;
+    }
+
+    scout_bits_len = _generate_frame_bits(scout_bits, sizeof(scout_bits), (uint8_t *)&scout, sizeof(scout));
 
     // Generate payload frame
     data[5] = data[3];

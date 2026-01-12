@@ -13,11 +13,13 @@
 #pragma once
 
 #include <stdint.h>
+#include "utils.h"
 #include "hal/gpio_types.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/message_buffer.h"
 
 #define ECONET_MTU 8192
+#define ECONET_RX_BUFFER_WORKSPACE 32
 
 typedef void (*econet_frame_callback)(uint8_t *data, uint16_t length, void *user_ctx);
 
@@ -111,9 +113,19 @@ void econet_clock_reconfigure(void);
 void econet_start(void);
 econet_acktype_t econet_send(uint8_t *data, uint16_t length);
 void econet_rx_clear_bitmaps(void);
-void exonet_rx_enable_station(uint8_t station_id);
-void exonet_rx_enable_network(uint8_t network_id);
+void econet_rx_enable_station(uint8_t station_id);
+void econet_rx_set_networks(bitmap256_t *nets);
 void econet_rx_shutdown(void);
+
+ALWAYS_INLINE void econet_swap_addresses(econet_hdr_t *hdr)
+{
+    uint8_t tmp = hdr->dst_net;
+    hdr->dst_net = hdr->src_net;
+    hdr->src_net = tmp;
+    tmp = hdr->dst_stn;
+    hdr->dst_stn = hdr->src_stn;
+    hdr->src_stn = tmp;
+}
 
 #ifdef ECONET_PRIVATE_API
 #define TAG "ECONET"

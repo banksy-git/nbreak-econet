@@ -13,5 +13,6 @@ export default {
     "icon-[lucide--network]",
     "icon-[hugeicons--gears]",
     "icon-[meteor-icons--wave-square]",
+    "icon-[mdi--satellite-uplink]",
   ]
 };

@@ -394,6 +394,8 @@ static const struct
     {"save_econet", _ws_save_econet},
     {"get_econet_clock", _ws_get_econet_clock},
     {"save_econet_clock", _ws_save_econet_clock},
+    {"get_econet_uplinks", _ws_get_econet},
+    {"save_econet_uplinks", _ws_save_econet},
 
 };
 
@@ -555,7 +557,8 @@ esp_err_t http_ws_broadcast_json(const char *json)
         ESP_LOGW(TAG, "Couldn't send broadcast message. Too long.");
         return ESP_FAIL;
     }
-    if (msg_len==0) {
+    if (msg_len == 0)
+    {
         return ESP_FAIL;
     }
 
@@ -563,7 +566,7 @@ esp_err_t http_ws_broadcast_json(const char *json)
     bool is_empty = xStreamBufferNextMessageLengthBytes(_broadcast_messages) > 0;
     size_t len_written = xMessageBufferSend(_broadcast_messages, json, msg_len, 0);
     portEXIT_CRITICAL(&_broadcast_messages_lock);
-    if (len_written==0)
+    if (len_written == 0)
     {
         return ESP_FAIL;
     }

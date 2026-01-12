@@ -20,6 +20,8 @@ idf_component_register(SRCS
     "config.c"
     "main.c"
     "parlio_tx_econet.c"
+    "trunk.c"
+    "crypt.c"
     INCLUDE_DIRS ".")
 
 littlefs_create_partition_image(rootfs ../fsroot FLASH_IN_PROJECT)
