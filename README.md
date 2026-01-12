@@ -120,6 +120,20 @@ sound. Alas it has some bugs which made me look for alternatives.
 
 Example configuration files for both are included in the contrib/ directory under peb and aund respectively.
 
+## Uplinks
+
+nbreak-econet now supports uplinks (trunks) to wide-area Econet networks using the Bridge-over-IP protocol developed by the PiEconetBridge team.
+
+To configure an uplink via PiEconetBridge, add a `TRUNK` line to your configuration:
+
+```
+TRUNK ON PORT 32769 TO DYNAMIC KEY thisIsThe32ByteKey
+```
+
+Enter the same port and key details in the **Uplinks** tab of the PiEconetBridge web interface.
+
+Once the connection is established, remote Econet networks hosted by PiEconetBridge will appear on your local Econet as additional networks.
+
 ## Building the firmware yourself
 
 Firmware is built and flashed using **idf.py** from **version 5.5.1** of the ESP-IDF toolchain.
