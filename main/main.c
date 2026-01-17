@@ -101,7 +101,7 @@ void app_main(void)
 
     esp_intr_dump(stderr);
 
-    static char buf[512];
+    static char buf[1024];
     for (int i = 0;; i++)
     {
         vTaskDelay(1000 / portTICK_PERIOD_MS);

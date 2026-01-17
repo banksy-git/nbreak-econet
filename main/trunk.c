@@ -289,7 +289,7 @@ void trunk_rx_process(trunk_t *trunk)
         return;
     }
 
-    if (hdr.ecohdr.dst_net != trunk_our_net || hdr.ecohdr.dst_net != 255)
+    if (hdr.ecohdr.dst_net != trunk_our_net && hdr.ecohdr.dst_net != 255)
     {
         ESP_LOGW(TAG, "Packet arrived destined for %d.%d but our net is %d. Packet discarded.", hdr.ecohdr.dst_net, hdr.ecohdr.dst_stn, trunk_our_net);
         return;

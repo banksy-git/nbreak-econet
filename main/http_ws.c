@@ -23,7 +23,7 @@
 
 static const char *TAG = "ws";
 
-#define MAX_WS_BROADCAST_SIZE 512
+#define MAX_WS_BROADCAST_SIZE 1024
 #define MAX_WS_CLIENTS 4
 
 static MessageBufferHandle_t _broadcast_messages;
