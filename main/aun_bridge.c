@@ -317,31 +317,6 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
         return;
     }
 
-    if (udp_rx_buffer[0] == AUN_TYPE_IMM)
-    {
-        // MACHINETYPE - TODO: We should forward this but need some other
-        //  stuff first because IMM is handled differently. This is to
-        //  satify AUN stations that use this as a reachability test
-        if (hdr.econet_port == 0 && hdr.econet_control == 0x8)
-        {
-            struct sockaddr_in dest_addr;
-            dest_addr.sin_addr.s_addr = inet_addr(aun_station->remote_address);
-            dest_addr.sin_family = AF_INET;
-            dest_addr.sin_port = htons(aun_station->udp_port);
-            memcpy(udp_rx_buffer, &hdr, sizeof(hdr));
-            udp_rx_buffer[0] = AUN_TYPE_IMM_REPLY;
-            sendto(econet_station->socket, udp_rx_buffer, 12, 0,
-                   (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-            ESP_LOGI(TAG, "Responded to MACHINETYPE request without forwarding.");
-        }
-        else
-        {
-            ESP_LOGW(TAG, "Ignored IMM packet with ");
-        }
-
-        return;
-    }
-
     // Change AUN header to Econet style
     len -= 2;
     udp_rx_buffer[2] = econet_station->station_id;
@@ -353,15 +328,18 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
 
     // Send to Beeb (but only if we didn't get acknowledgement before for this packet.)
     // NOTE: We're not encountering out of order but if we do then we'll need a different strategy to reorder them.
-    if (ack_seq != aun_station->last_acked_seq || aun_station->last_tx_result == ECONET_NACK)
+    uint8_t *imm_reply = NULL;
+    uint16_t imm_reply_len;
+    if (ack_seq != aun_station->last_acked_seq || aun_station->last_tx_result == ECONET_NACK || aun_station->last_tx_result == ECONET_IMM_REPLY)
     {
-        ESP_LOGI(TAG, "[%05d] Delivering %d byte frame from %d.%d (%s) to Econet %d.%d",
+        ESP_LOGI(TAG, "[%05d] Delivering %d byte frame from %d.%d (%s) to Econet %d.%d (P0x%x C0x%x)",
                  ack_seq, len,
                  aun_station->network_id, aun_station->station_id,
                  inet_ntoa(source_addr.sin_addr),
-                 econet_station->network_id, econet_station->station_id);
+                 econet_station->network_id, econet_station->station_id,
+                 hdr.econet_port, hdr.econet_control);
 
-        aun_station->last_tx_result = econet_send(&udp_rx_buffer[2], len);
+        aun_station->last_tx_result = econet_send(&udp_rx_buffer[2], len, &imm_reply, &imm_reply_len);
         aun_station->last_acked_seq = ack_seq;
     }
     else
@@ -370,13 +348,17 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
     }
 
     // Send AUN ack/nack
-    if (aun_station->last_tx_result == ECONET_ACK)
+    switch (aun_station->last_tx_result)
     {
+    case ECONET_ACK:
         hdr.transaction_type = AUN_TYPE_ACK;
         aunbridge_stats.tx_ack_count++;
-    }
-    else
-    {
+        break;
+    case ECONET_IMM_REPLY:
+        hdr.transaction_type = AUN_TYPE_IMM_REPLY;
+        aunbridge_stats.tx_ack_count++;
+        break;
+    default:
         hdr.transaction_type = AUN_TYPE_NACK;
         aunbridge_stats.tx_nack_count++;
     }
@@ -387,7 +369,15 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_port = htons(aun_station->udp_port);
     memcpy(udp_rx_buffer, &hdr, sizeof(hdr));
-    sendto(econet_station->socket, udp_rx_buffer, 8, 0,
+    if (imm_reply != NULL)
+    {
+        memcpy(udp_rx_buffer + sizeof(hdr), imm_reply, imm_reply_len);
+    }
+    else
+    {
+        imm_reply_len = 0;
+    }
+    sendto(econet_station->socket, udp_rx_buffer, sizeof(hdr) + imm_reply_len, 0,
            (struct sockaddr *)&dest_addr, sizeof(dest_addr));
 }
 

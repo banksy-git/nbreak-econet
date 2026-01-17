@@ -319,7 +319,9 @@ void trunk_rx_process(trunk_t *trunk)
 
     // Send to Beeb (but only if we didn't get acknowledgement before for this packet.)
     // NOTE: We're not encountering out of order but if we do then we'll need a different strategy to reorder them.
-    if (hdr.sequence != trunk->last_acked_seq || trunk->last_tx_result == ECONET_NACK)
+    uint8_t *imm_reply = NULL;
+    uint16_t imm_reply_len;
+    if (hdr.sequence != trunk->last_acked_seq || trunk->last_tx_result == ECONET_NACK || trunk->last_tx_result == ECONET_IMM_REPLY)
     {
         ESP_LOGI(TAG, "[%05d] Delivering %d byte frame from %d.%d to Econet %d.%d (P0x%x C0x%x)",
                  hdr.sequence, len,
@@ -327,7 +329,7 @@ void trunk_rx_process(trunk_t *trunk)
                  hdr.ecohdr.dst_net, hdr.ecohdr.dst_stn,
                  hdr.port, hdr.control);
 
-        trunk->last_tx_result = econet_send(payload, len);
+        trunk->last_tx_result = econet_send(payload, len, &imm_reply, &imm_reply_len);
         trunk->last_acked_seq = hdr.sequence;
     }
     else
@@ -336,13 +338,17 @@ void trunk_rx_process(trunk_t *trunk)
     }
 
     // Send AUN ack/nack
-    if (trunk->last_tx_result == ECONET_ACK)
+    switch (trunk->last_tx_result)
     {
+    case ECONET_ACK:
         hdr.transaction_type = AUN_TYPE_ACK;
         aunbridge_stats.tx_ack_count++;
-    }
-    else
-    {
+        break;
+    case ECONET_IMM_REPLY:
+        hdr.transaction_type = AUN_TYPE_IMM_REPLY;
+        aunbridge_stats.tx_ack_count++;
+        break;
+    default:
         hdr.transaction_type = AUN_TYPE_NACK;
         aunbridge_stats.tx_nack_count++;
     }
@@ -351,7 +357,15 @@ void trunk_rx_process(trunk_t *trunk)
     econet_swap_addresses(&hdr.ecohdr);
     uint8_t *packet = udp_rx_buffer + CRYPT_WORKSPACE_SIZE;
     memcpy(packet, &hdr, sizeof(hdr));
-    _encrypt_and_send_using_workspace(trunk, packet, sizeof(hdr), sizeof(udp_rx_buffer) - CRYPT_WORKSPACE_SIZE, CRYPT_WORKSPACE_SIZE);
+    if (imm_reply != NULL)
+    {
+        memcpy(packet + sizeof(hdr), imm_reply, imm_reply_len);
+    }
+    else
+    {
+        imm_reply_len = 0;
+    }
+    _encrypt_and_send_using_workspace(trunk, packet, sizeof(hdr) + imm_reply_len, sizeof(udp_rx_buffer) - CRYPT_WORKSPACE_SIZE, CRYPT_WORKSPACE_SIZE);
 }
 
 static void _setup_trunk(void *ctx, const config_trunk_t *cfg)

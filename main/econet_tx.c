@@ -40,10 +40,15 @@ typedef struct
 TaskHandle_t DRAM_ATTR tx_task = NULL;
 QueueHandle_t DRAM_ATTR tx_command_queue;
 volatile bool DRAM_ATTR tx_is_in_progress;
+volatile bool DRAM_ATTR tx_is_awaiting_imm_reply;
 
 static parlio_tx_unit_handle_t DRAM_ATTR tx_unit;
 static TaskHandle_t DRAM_ATTR tx_sender_task = NULL;
 static econet_acktype_t DRAM_ATTR tx_sent_ack;
+
+// Immediate reply
+static uint8_t *_imm_reply;
+static uint16_t _imm_reply_len;
 
 // Outgoing frame
 static uint8_t DRAM_ATTR tx_flag_stream[ECONET_FLAGSTREAM_PADDING * ECONET_PARLIO_WIDTH];
@@ -230,6 +235,20 @@ static void IRAM_ATTR _transmit_bits(const uint8_t *bits, size_t length)
     tx_is_in_progress = false;
 }
 
+static void IRAM_ATTR _complete_tx_command(econet_acktype_t result)
+{
+    tx_sent_ack = result;
+    econet_stats.tx_frame_count++;
+    switch (result)
+    {
+    case ECONET_NACK:
+    case ECONET_NACK_CORRUPT:
+        econet_stats.rx_nack_count++;
+    default:
+    }
+    xTaskNotifyGive(tx_sender_task);
+}
+
 static void IRAM_ATTR _tx_task(void *params)
 {
     bool is_data_ready = false;
@@ -239,6 +258,8 @@ static void IRAM_ATTR _tx_task(void *params)
 
     for (;;)
     {
+        tx_is_awaiting_imm_reply = false;
+
         _queue_flagstream();
 
         econet_tx_command_t cmd;
@@ -259,6 +280,12 @@ static void IRAM_ATTR _tx_task(void *params)
             continue;
         }
 
+        if (cmd.cmd == 'R')
+        {
+            ESP_LOGE(TAG, "Unexpected IMM reply. tx_is_awaiting_imm_reply=%d", tx_is_awaiting_imm_reply);
+            continue;
+        }
+
         if (cmd.cmd == 'S')
         {
             is_data_ready = true;
@@ -272,24 +299,45 @@ static void IRAM_ATTR _tx_task(void *params)
         is_data_ready = false;
 
         // Send scout
+        if (cmd.flags == ECONET_TX_IMM_WITH_REPLY)
+        {
+            tx_is_awaiting_imm_reply = true;
+        }
         _transmit_bits(scout_bits, scout_bits_len);
         _queue_flagstream();
 
-        // Wait for ack
-        if (xQueueReceive(tx_command_queue, &cmd, 200) == pdFALSE)
+        // Wait for ack or imm data
+        econet_tx_command_t response_cmd;
+        if (xQueueReceive(tx_command_queue, &response_cmd, 200) == pdFALSE)
         {
             ESP_LOGW(TAG, "Timeout waiting for scout ack");
-            tx_sent_ack = ECONET_NACK;
-            xTaskNotifyGive(tx_sender_task);
-            econet_stats.rx_nack_count++;
+            _complete_tx_command(ECONET_NACK);
             continue;
         }
-        if (cmd.cmd == 'I')
+        if (response_cmd.cmd == 'I')
         {
             ESP_LOGI(TAG, "Bus became idle whilst waiting for scout ack (%d)", econet_rx_is_idle());
-            tx_sent_ack = ECONET_NACK;
-            xTaskNotifyGive(tx_sender_task);
-            econet_stats.rx_nack_count++;
+            _complete_tx_command(ECONET_NACK);
+            continue;
+        }
+        if (response_cmd.cmd == 'R')
+        {
+            if (cmd.flags == ECONET_TX_IMM_WITH_REPLY)
+            {
+                _imm_reply = response_cmd.imm_reply + ECONET_RX_BUFFER_WORKSPACE;
+                _imm_reply_len = response_cmd.imm_length;
+                _complete_tx_command(ECONET_IMM_REPLY);
+                continue;
+            }
+            else
+            {
+                ESP_LOGE(TAG, "Unexpected IMM reply after scout. tx_is_awaiting_imm_reply=%d", tx_is_awaiting_imm_reply);
+                continue;
+            }
+        }
+        if (cmd.flags == ECONET_TX_IMM_NO_DATA)
+        {
+            _complete_tx_command(ECONET_ACK);
             continue;
         }
 
@@ -297,66 +345,96 @@ static void IRAM_ATTR _tx_task(void *params)
         _transmit_bits(tx_bits, tx_bits_len);
 
         // Wait for ack
-        if (xQueueReceive(tx_command_queue, &cmd, 200) == pdFALSE)
+        if (xQueueReceive(tx_command_queue, &response_cmd, 200) == pdFALSE)
         {
             ESP_LOGW(TAG, "Timeout waiting for data ack");
-            tx_sent_ack = ECONET_NACK_CORRUPT;
-            xTaskNotifyGive(tx_sender_task);
-            econet_stats.rx_nack_count++;
+            _complete_tx_command(ECONET_NACK_CORRUPT);
             continue;
         }
-        if (cmd.cmd == 'I')
+        if (response_cmd.cmd == 'I')
         {
             ESP_LOGW(TAG, "Bus became idle whilst waiting for data ack");
-            tx_sent_ack = ECONET_NACK_CORRUPT;
-            xTaskNotifyGive(tx_sender_task);
-            econet_stats.rx_nack_count++;
+            _complete_tx_command(ECONET_NACK_CORRUPT);
             continue;
         }
 
-        tx_sent_ack = ECONET_ACK;
-        xTaskNotifyGive(tx_sender_task);
-        econet_stats.tx_frame_count++;
+        _complete_tx_command(ECONET_ACK);
     }
 }
 
-econet_acktype_t econet_send(uint8_t *data, uint16_t length)
+econet_acktype_t econet_send(uint8_t *data, uint16_t length, uint8_t **imm_reply, uint16_t *imm_reply_len)
 {
     tx_sender_task = xTaskGetCurrentTaskHandle();
 
-    // Generate scout
-    econet_scout_t scout;
-    memcpy(&scout, data, sizeof(scout));
-    if (scout.port == 0)
+    if (length < sizeof(econet_scout_t))
     {
-        ESP_LOGW(TAG, "Discarded immediate mode packet. (TX)");
+        ESP_LOGE(TAG, "Refusing to send short packet len=%d", length);
         return ECONET_SEND_ERROR;
     }
 
-    scout_bits_len = _generate_frame_bits(scout_bits, sizeof(scout_bits), (uint8_t *)&scout, sizeof(scout));
+    // Generate scout
+    uint8_t tx_cmd_flags = ECONET_TX_NORMAL;
+    econet_scout_t scout;
+    memcpy(&scout, data, sizeof(scout));
+
+    if (scout.port == 0) // Immedate frame handling
+    {
+        if (scout.control == ECONET_CTRL_PEEK || scout.control == ECONET_CTRL_MACHINETYPE || scout.control == ECONET_CTRL_GETREGISTERS)
+        {
+            tx_cmd_flags = ECONET_TX_IMM_WITH_REPLY;
+        }
+        if (scout.control == ECONET_CTRL_HALT || scout.control == ECONET_CTRL_CONTINUE)
+        {
+            tx_cmd_flags = ECONET_TX_IMM_NO_DATA;
+        }
+    }
+
+    if (tx_cmd_flags == ECONET_TX_IMM_WITH_REPLY || tx_cmd_flags == ECONET_TX_IMM_NO_DATA)
+    {
+        // Generate IMM scout frame with attached data
+        if (length - sizeof(econet_scout_t) > 8)
+        {
+            ESP_LOGE(TAG, "Refusing to send immediate frame with too much data. length=%d", length);
+            return ECONET_SEND_ERROR;
+        }
+        scout_bits_len = _generate_frame_bits(scout_bits, sizeof(scout_bits), data, length);
+    }
+    else
+    {
+        // Generate normal scout frame
+        scout_bits_len = _generate_frame_bits(scout_bits, sizeof(scout_bits), (uint8_t *)&scout, sizeof(scout));
+    }
 
     // Generate payload frame
-    data[5] = data[3];
-    data[4] = data[2];
-    data[3] = data[1];
-    data[2] = data[0];
+    data[2] = scout.hdr.dst_stn;
+    data[3] = scout.hdr.dst_net;
+    data[4] = scout.hdr.src_stn;
+    data[5] = scout.hdr.src_net;
     tx_bits_len = _generate_frame_bits(tx_bits, sizeof(tx_bits), &data[2], length - 2);
 
     // Notify sender task
-    econet_tx_command_t cmd = {.cmd = 'S'};
+    econet_tx_command_t cmd = {.cmd = 'S', .flags = tx_cmd_flags};
     if (xQueueSend(tx_command_queue, &cmd, 1000) != pdTRUE)
     {
         ESP_LOGE(TAG, "Failed to post econet send command. This is a bug.");
         return ECONET_SEND_ERROR;
     }
 
-    // Wait for send completion (Full 4-way ACK or NACK)
+    // Wait for send completion
     if (ulTaskNotifyTake(pdTRUE, 10000) != pdTRUE)
     {
         ESP_LOGE(TAG, "Timeout waiting for send. Missing clock or line jammed?");
         return ECONET_SEND_ERROR;
     };
 
+    if (imm_reply)
+    {
+        if (_imm_reply_len >= 4)
+        {
+            *imm_reply = _imm_reply + 4;
+            *imm_reply_len = _imm_reply_len - 4;
+        }
+    }
     return tx_sent_ack;
 }
 

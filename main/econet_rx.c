@@ -86,21 +86,35 @@ static inline void IRAM_ATTR _complete_frame()
         BaseType_t is_awoken = true;
         if (data_len > 4)
         {
-            econet_tx_command_t ack_cmd = {
-                .cmd = 'A',
-                .dst_stn = rx_buf[2],
-                .dst_net = rx_buf[3],
-                .src_stn = rx_buf[0],
-                .src_net = rx_buf[1]};
-            xQueueSendFromISR(tx_command_queue, &ack_cmd, &is_awoken);
-            econet_tx_pre_go();
+            // Normal data packet
+            if (!tx_is_awaiting_imm_reply)
+            {
 
-            econet_rx_packet_t rx_pkt = {
-                .type = 'P',
-                .data = &rx_packet_buffers[rx_packet_buffer_index][0],
-                .length = data_len,
-            };
-            xQueueSendFromISR(econet_rx_packet_queue, &rx_pkt, NULL);
+                econet_tx_command_t ack_cmd = {
+                    .cmd = 'A',
+                    .dst_stn = rx_buf[2],
+                    .dst_net = rx_buf[3],
+                    .src_stn = rx_buf[0],
+                    .src_net = rx_buf[1]};
+                xQueueSendFromISR(tx_command_queue, &ack_cmd, &is_awoken);
+                econet_tx_pre_go();
+
+                econet_rx_packet_t rx_pkt = {
+                    .type = 'P',
+                    .data = &rx_packet_buffers[rx_packet_buffer_index][0],
+                    .length = data_len,
+                };
+                xQueueSendFromISR(econet_rx_packet_queue, &rx_pkt, NULL);
+            }
+            else
+            { // IMMediate reply
+                econet_tx_command_t imm_reply_cmd = {
+                    .cmd = 'R',
+                    .imm_reply = &rx_packet_buffers[rx_packet_buffer_index][0],
+                    .imm_length = data_len,
+                };
+                xQueueSendFromISR(tx_command_queue, &imm_reply_cmd, &is_awoken);
+            }
 
             rx_packet_buffer_index++;
             if (rx_packet_buffer_index >= ECONET_PACKET_BUFFER_COUNT)

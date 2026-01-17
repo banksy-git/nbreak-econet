@@ -21,6 +21,18 @@
 #define ECONET_MTU 8192
 #define ECONET_RX_BUFFER_WORKSPACE 32
 
+// Econet immediate mode packet types.
+// Thanks to JGH for info (https://mdfs.net/Docs/Comp/Econet/Specs/Packets)
+#define ECONET_CTRL_PEEK 0x81         // Scout->, <-Data
+#define ECONET_CTRL_POKE 0x82         // Scout->, <-Ack, Data->, <-Ack
+#define ECONET_CTRL_JSR 0x83          // Scout->, <-Ack, Data->, <-Ack
+#define ECONET_CTRL_USERPROC 0x84     // Scout->, <-Ack, Data->, <-Ack
+#define ECONET_CTRL_OSPROC 0x85       // Scout->, <-Ack, Data->, <-Ack
+#define ECONET_CTRL_HALT 0x86         // Scout->, <-Ack
+#define ECONET_CTRL_CONTINUE 0x87     // Scout->, <-Ack
+#define ECONET_CTRL_MACHINETYPE 0x88  // Scout->, <-Data
+#define ECONET_CTRL_GETREGISTERS 0x89 // Scout->, <-Data
+
 typedef void (*econet_frame_callback)(uint8_t *data, uint16_t length, void *user_ctx);
 
 /*** Econet acknowledgement types.
@@ -55,6 +67,7 @@ typedef enum
     ECONET_NACK,         ///< Packet was not acknowledged (safe to retry)
     ECONET_NACK_CORRUPT, ///< Packet may have been accepted (not safe to retry)
     ECONET_SEND_ERROR,   ///< Send could not be started
+    ECONET_IMM_REPLY,    ///< Packet was acknowledged with immediate reply
 } econet_acktype_t;
 
 typedef struct
@@ -111,7 +124,7 @@ extern QueueHandle_t econet_rx_packet_queue;
 void econet_setup(const econet_config_t *config);
 void econet_clock_reconfigure(void);
 void econet_start(void);
-econet_acktype_t econet_send(uint8_t *data, uint16_t length);
+econet_acktype_t econet_send(uint8_t *data, uint16_t length, uint8_t **imm_reply, uint16_t *imm_reply_len);
 void econet_rx_clear_bitmaps(void);
 void econet_rx_enable_station(uint8_t station_id);
 void econet_rx_set_networks(bitmap256_t *nets);
@@ -133,6 +146,7 @@ extern econet_config_t econet_cfg;
 extern QueueHandle_t tx_command_queue;
 extern TaskHandle_t tx_task;
 extern volatile bool tx_is_in_progress;
+extern volatile bool tx_is_awaiting_imm_reply;
 extern uint32_t rx_ack_wait_time;
 
 void econet_rx_setup(void);
@@ -141,6 +155,14 @@ void econet_tx_setup(void);
 void econet_tx_start(void);
 bool econet_rx_is_idle(void);
 void econet_tx_pre_go(void);
+
+typedef enum
+{
+    ECONET_TX_NORMAL,
+    ECONET_TX_IMM_WITH_REPLY, ///< We expect an IMM reply
+    ECONET_TX_IMM_NO_DATA,    ///< No data phase, just ACK
+} econet_tx_command_flags_t;
+
 typedef struct
 {
     char cmd;
@@ -148,6 +170,9 @@ typedef struct
     uint8_t dst_net;
     uint8_t src_stn;
     uint8_t src_net;
+    uint8_t flags;
+    uint8_t *imm_reply;
+    size_t imm_length;
 } econet_tx_command_t;
 
 #endif
