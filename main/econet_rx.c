@@ -82,23 +82,26 @@ static inline void IRAM_ATTR _complete_frame()
 
         uint32_t data_len = rx_frame_len - 2;
 
-        // Send ACK immediately
         BaseType_t is_awoken = true;
         if (data_len > 4)
         {
             // Normal data packet
             if (!tx_is_awaiting_imm_reply)
             {
+                // Trigger ACK immediately if not broadcast
+                if (rx_buf[0] != 255 && rx_buf[1] != 255)
+                {
+                    econet_tx_command_t ack_cmd = {
+                        .cmd = 'A',
+                        .dst_stn = rx_buf[2],
+                        .dst_net = rx_buf[3],
+                        .src_stn = rx_buf[0],
+                        .src_net = rx_buf[1]};
+                    xQueueSendFromISR(tx_command_queue, &ack_cmd, &is_awoken);
+                    econet_tx_pre_go();
+                }
 
-                econet_tx_command_t ack_cmd = {
-                    .cmd = 'A',
-                    .dst_stn = rx_buf[2],
-                    .dst_net = rx_buf[3],
-                    .src_stn = rx_buf[0],
-                    .src_net = rx_buf[1]};
-                xQueueSendFromISR(tx_command_queue, &ack_cmd, &is_awoken);
-                econet_tx_pre_go();
-
+                // Deliver packet to outgoing queue
                 econet_rx_packet_t rx_pkt = {
                     .type = 'P',
                     .data = &rx_packet_buffers[rx_packet_buffer_index][0],

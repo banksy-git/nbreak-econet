@@ -161,6 +161,7 @@ typedef enum
     ECONET_TX_NORMAL,
     ECONET_TX_IMM_WITH_REPLY, ///< We expect an IMM reply
     ECONET_TX_IMM_NO_DATA,    ///< No data phase, just ACK
+    ECONET_TX_BROADCAST,      ///< Send broadcast (no ACK expected)
 } econet_tx_command_flags_t;
 
 typedef struct

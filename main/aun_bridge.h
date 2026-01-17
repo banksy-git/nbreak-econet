@@ -41,12 +41,14 @@ typedef struct
     uint32_t tx_ack_count;
     uint32_t tx_nack_count;
     uint32_t tx_bridge_control;
+    uint32_t tx_broadcast_count;
     uint32_t rx_imm_count;
     uint32_t rx_data_count;
     uint32_t rx_ack_count;
     uint32_t rx_nack_count;
     uint32_t rx_unknown_count;
     uint32_t rx_bridge_control;
+    uint32_t rx_broadcast_count;
 } aunbridge_stats_t;
 
 extern aunbridge_stats_t aunbridge_stats;

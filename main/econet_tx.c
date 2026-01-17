@@ -235,6 +235,25 @@ static void IRAM_ATTR _transmit_bits(const uint8_t *bits, size_t length)
     tx_is_in_progress = false;
 }
 
+static bool IRAM_ATTR _start_send_and_wait(econet_tx_command_flags_t flags) {
+
+      // Notify sender task
+      econet_tx_command_t cmd = {.cmd = 'S', .flags = flags};
+      if (xQueueSend(tx_command_queue, &cmd, 1000) != pdTRUE)
+      {
+          ESP_LOGE(TAG, "Failed to post econet send command. This is a bug.");
+          return false;
+      }
+  
+      // Wait for send completion
+      if (ulTaskNotifyTake(pdTRUE, 10000) != pdTRUE)
+      {
+          ESP_LOGE(TAG, "Timeout waiting for send. Missing clock or line jammed?");
+          return false;
+      };
+      return true;
+}
+
 static void IRAM_ATTR _complete_tx_command(econet_acktype_t result)
 {
     tx_sent_ack = result;
@@ -297,6 +316,14 @@ static void IRAM_ATTR _tx_task(void *params)
         }
 
         is_data_ready = false;
+
+        // Broadcast send (no ACK)
+        if (cmd.flags == ECONET_TX_BROADCAST)
+        {
+            _transmit_bits(tx_bits, tx_bits_len);
+            _complete_tx_command(ECONET_ACK);
+            continue;
+        }
 
         // Send scout
         if (cmd.flags == ECONET_TX_IMM_WITH_REPLY)
@@ -372,12 +399,23 @@ econet_acktype_t econet_send(uint8_t *data, uint16_t length, uint8_t **imm_reply
         return ECONET_SEND_ERROR;
     }
 
-    // Generate scout
+    // Extract scout
     uint8_t tx_cmd_flags = ECONET_TX_NORMAL;
     econet_scout_t scout;
     memcpy(&scout, data, sizeof(scout));
 
-    if (scout.port == 0) // Immedate frame handling
+    // Broadcast
+    if (scout.hdr.dst_stn==255 || scout.hdr.dst_net==255) 
+    {
+        tx_bits_len = _generate_frame_bits(tx_bits, sizeof(tx_bits), &data, length);
+        if (!_start_send_and_wait(ECONET_TX_BROADCAST)) {
+            return ECONET_SEND_ERROR;
+        }
+        return tx_sent_ack;
+    }
+
+    // Immedate frame handling
+    if (scout.port == 0) 
     {
         if (scout.control == ECONET_CTRL_PEEK || scout.control == ECONET_CTRL_MACHINETYPE || scout.control == ECONET_CTRL_GETREGISTERS)
         {
@@ -413,20 +451,10 @@ econet_acktype_t econet_send(uint8_t *data, uint16_t length, uint8_t **imm_reply
     tx_bits_len = _generate_frame_bits(tx_bits, sizeof(tx_bits), &data[2], length - 2);
 
     // Notify sender task
-    econet_tx_command_t cmd = {.cmd = 'S', .flags = tx_cmd_flags};
-    if (xQueueSend(tx_command_queue, &cmd, 1000) != pdTRUE)
-    {
-        ESP_LOGE(TAG, "Failed to post econet send command. This is a bug.");
+    if (!_start_send_and_wait(tx_cmd_flags)) {
         return ECONET_SEND_ERROR;
     }
-
-    // Wait for send completion
-    if (ulTaskNotifyTake(pdTRUE, 10000) != pdTRUE)
-    {
-        ESP_LOGE(TAG, "Timeout waiting for send. Missing clock or line jammed?");
-        return ECONET_SEND_ERROR;
-    };
-
+  
     if (imm_reply)
     {
         if (_imm_reply_len >= 4)

@@ -289,6 +289,9 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
 
     switch (hdr.transaction_type)
     {
+    case AUN_TYPE_BROADCAST:
+        aunbridge_stats.rx_broadcast_count++;
+        break;
     case AUN_TYPE_IMM:
         aunbridge_stats.rx_imm_count++;
         break;
@@ -319,7 +322,7 @@ static void _aun_udp_rx_process(econet_station_t *econet_station)
 
     // Change AUN header to Econet style
     len -= 2;
-    udp_rx_buffer[2] = econet_station->station_id;
+    udp_rx_buffer[2] = (hdr.transaction_type==AUN_TYPE_BROADCAST) ? 255 : econet_station->station_id;
     udp_rx_buffer[3] = 0x00;
     udp_rx_buffer[4] = aun_station->station_id;
     udp_rx_buffer[5] = 0x00;

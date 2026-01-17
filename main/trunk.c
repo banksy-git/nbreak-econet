@@ -252,7 +252,7 @@ void trunk_rx_process(trunk_t *trunk)
     payload += sizeof(hdr);
     len -= sizeof(hdr);
 
-    // Broadcast handling
+    // Bridge control handling
     if (hdr.transaction_type == AUN_TYPE_BROADCAST || hdr.ecohdr.dst_net == 255 || hdr.ecohdr.dst_stn == 255)
     {
         if (hdr.port == BRIDGE_PORT)
@@ -261,16 +261,14 @@ void trunk_rx_process(trunk_t *trunk)
             _bridge_control_udp(trunk, &hdr, payload, len);
             return;
         }
-        else
-        {
-            ESP_LOGW(TAG, "Unhandled broadcast packet from %d.%d", hdr.ecohdr.src_net, hdr.ecohdr.src_stn);
-            return;
-        }
     }
 
     // Other handling
     switch (hdr.transaction_type)
     {
+    case AUN_TYPE_BROADCAST:
+        aunbridge_stats.rx_broadcast_count++;
+        break;
     case AUN_TYPE_IMM:
         aunbridge_stats.rx_imm_count++;
         break;
@@ -291,7 +289,7 @@ void trunk_rx_process(trunk_t *trunk)
         return;
     }
 
-    if (hdr.ecohdr.dst_net != trunk_our_net)
+    if (hdr.ecohdr.dst_net != trunk_our_net || hdr.ecohdr.dst_net != 255)
     {
         ESP_LOGW(TAG, "Packet arrived destined for %d.%d but our net is %d. Packet discarded.", hdr.ecohdr.dst_net, hdr.ecohdr.dst_stn, trunk_our_net);
         return;
