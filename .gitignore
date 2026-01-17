@@ -1,5 +1,6 @@
 build/
 .vscode/
+.cache/
 sdkconfig.old
 fsroot/web
 __pycache__/
