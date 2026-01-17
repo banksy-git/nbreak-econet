@@ -30,10 +30,15 @@
     { key: "tx_error_count", label: "TX Error", warn: true },
     { key: "tx_ack_count", label: "TX Ack" },
     { key: "tx_nack_count", label: "TX Nack", warn: true },
+    { key: "tx_bridge_control", label: "TX Bridge Control" },
+    { key: "tx_broadcast_count", label: "TX Broadcast" },
+    { key: "rx_imm_count", label: "RX Immediate" },
     { key: "rx_data_count", label: "RX Data" },
     { key: "rx_ack_count", label: "RX Ack" },
     { key: "rx_nack_count", label: "RX Nack", warn: true },
     { key: "rx_unknown_count", label: "RX Unknown" },
+    { key: "rx_bridge_control", label: "RX Bridge Control" },
+    { key: "rx_broadcast_count", label: "RX Broadcast" },
   ];
 </script>
 

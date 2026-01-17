@@ -29,10 +29,15 @@ export type AunbridgeStats = {
   tx_error_count: number;
   tx_ack_count: number;
   tx_nack_count: number;
+  tx_bridge_control: number;
+  tx_broadcast_count: number;
+  rx_imm_count: number;
   rx_data_count: number;
   rx_ack_count: number;
   rx_nack_count: number;
   rx_unknown_count: number;
+  rx_bridge_control: number;
+  rx_broadcast_count: number;
 };
 
 export type WifiSettings = {
@@ -104,7 +109,6 @@ export type ClientMessage =
   | { type: "factory_reset"; id: number }
   | { type: "save_econet_clock"; id: number, settings: EconetClockSettings }
   | { type: "get_econet_clock"; id: number };
-
 
 
 

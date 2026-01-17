@@ -124,10 +124,15 @@ void app_main(void)
                            "\"tx_error_count\":%lu,"
                            "\"tx_ack_count\":%lu,"
                            "\"tx_nack_count\":%lu,"
+                           "\"tx_bridge_control\":%lu,"
+                           "\"tx_broadcast_count\":%lu,"
+                           "\"rx_imm_count\":%lu,"
                            "\"rx_data_count\":%lu,"
                            "\"rx_ack_count\":%lu,"
                            "\"rx_nack_count\":%lu,"
-                           "\"rx_unknown_count\":%lu"
+                           "\"rx_unknown_count\":%lu,"
+                           "\"rx_bridge_control\":%lu,"
+                           "\"rx_broadcast_count\":%lu"
                            "},"
                            "\"econet_stats\":{"
                            "\"rx_frame_count\":%lu,"
@@ -147,10 +152,15 @@ void app_main(void)
                            aun.tx_error_count,
                            aun.tx_ack_count,
                            aun.tx_nack_count,
+                           aun.tx_bridge_control,
+                           aun.tx_broadcast_count,
+                           aun.rx_imm_count,
                            aun.rx_data_count,
                            aun.rx_ack_count,
                            aun.rx_nack_count,
                            aun.rx_unknown_count,
+                           aun.rx_bridge_control,
+                           aun.rx_broadcast_count,
                            eco.rx_frame_count,
                            eco.rx_crc_fail_count,
                            eco.rx_short_frame_count,

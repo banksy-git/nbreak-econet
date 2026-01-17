@@ -48,10 +48,15 @@ export const aunbridgeStats = writable<AunbridgeStats>({
   tx_error_count: 0,
   tx_ack_count: 0,
   tx_nack_count: 0,
+  tx_bridge_control: 0,
+  tx_broadcast_count: 0,
+  rx_imm_count: 0,
   rx_data_count: 0,
   rx_ack_count: 0,
   rx_nack_count: 0,
   rx_unknown_count: 0,
+  rx_bridge_control: 0,
+  rx_broadcast_count: 0,
 });
 
 export type LogLevel = "info" | "warn" | "error" | "other";
