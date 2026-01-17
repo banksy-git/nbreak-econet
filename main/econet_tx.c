@@ -407,7 +407,7 @@ econet_acktype_t econet_send(uint8_t *data, uint16_t length, uint8_t **imm_reply
     // Broadcast
     if (scout.hdr.dst_stn==255 || scout.hdr.dst_net==255) 
     {
-        tx_bits_len = _generate_frame_bits(tx_bits, sizeof(tx_bits), &data, length);
+        tx_bits_len = _generate_frame_bits(tx_bits, sizeof(tx_bits), data, length);
         if (!_start_send_and_wait(ECONET_TX_BROADCAST)) {
             return ECONET_SEND_ERROR;
         }
