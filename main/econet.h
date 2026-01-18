@@ -147,7 +147,6 @@ extern QueueHandle_t tx_command_queue;
 extern TaskHandle_t tx_task;
 extern volatile bool tx_is_in_progress;
 extern volatile bool tx_is_awaiting_imm_reply;
-extern uint32_t rx_ack_wait_time;
 
 void econet_rx_setup(void);
 void econet_rx_start(void);

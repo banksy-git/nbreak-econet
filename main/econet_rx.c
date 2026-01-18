@@ -28,7 +28,6 @@
 #define ECONET_PACKET_BUFFER_COUNT 3
 
 QueueHandle_t DRAM_ATTR econet_rx_packet_queue;
-uint32_t DRAM_ATTR rx_ack_wait_time;
 
 static parlio_rx_unit_handle_t rx_unit;
 static parlio_rx_delimiter_handle_t rx_delimiter;
@@ -43,7 +42,7 @@ static uint8_t *DRAM_ATTR rx_buf;
 static uint32_t DRAM_ATTR rx_packet_buffer_index;
 static uint16_t DRAM_ATTR rx_frame_len;
 static uint16_t DRAM_ATTR rx_crc;
-static uint8_t DRAM_ATTR rx_idle_one_counter;
+static volatile uint8_t DRAM_ATTR rx_idle_one_counter;
 
 // These bitmaps determine which stations or networks we answer for on the Econet
 static volatile DRAM_ATTR bitmap256_t rx_station_bitmap;
@@ -126,7 +125,6 @@ static inline void IRAM_ATTR _complete_frame()
             }
             rx_buf = &rx_packet_buffers[rx_packet_buffer_index][ECONET_RX_BUFFER_WORKSPACE];
 
-            rx_ack_wait_time = esp_cpu_get_cycle_count();
         }
         else
         {
