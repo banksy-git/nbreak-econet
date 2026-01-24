@@ -18,3 +18,5 @@ monitor:
 menuconfig:
 	idf.py menuconfig
 
+clean:
+	idf.py clean
