@@ -96,7 +96,9 @@ export type StatsStreamPayload = {
 export type ServerMessage =
   | ({ type: "stats_stream" } & StatsStreamPayload)
   | { type: "log"; line: string }
-  |({ type: "response"; id: number } & Record<string, any>);
+  | { type: "pong" }
+  | { type: "restarting" }
+  | ({ type: "response"; id: number } & Record<string, any>);
 
 export type ClientMessage =
   | { type: "save_wifi"; id: number, settings: WifiSettings }
@@ -108,7 +110,6 @@ export type ClientMessage =
   | { type: "reboot"; id: number }
   | { type: "factory_reset"; id: number }
   | { type: "save_econet_clock"; id: number, settings: EconetClockSettings }
-  | { type: "get_econet_clock"; id: number };
-
-
+  | { type: "get_econet_clock"; id: number }
+  | { type: "ping"; id: number };
 

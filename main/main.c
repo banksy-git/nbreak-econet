@@ -101,7 +101,7 @@ void app_main(void)
 
     esp_intr_dump(stderr);
 
-    static char buf[1024];
+    static char buf[MAX_WS_BROADCAST_SIZE];
     for (int i = 0;; i++)
     {
         vTaskDelay(1000 / portTICK_PERIOD_MS);

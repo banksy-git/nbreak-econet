@@ -15,10 +15,13 @@
 #include "cJSON.h"
 #include "esp_http_server.h"
 
+#define MAX_WS_BROADCAST_SIZE 1024
+
 typedef esp_err_t (*ws_handler_fn)(httpd_req_t* req, int request_id, const cJSON *payload);
 
 httpd_handle_t http_server_start(void);
 esp_err_t http_ws_broadcast_json(const char *json);
+
 
 // Private api
 esp_err_t http_ws_handler(httpd_req_t *req);

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { getWebSocket, closeWebSocket } from "./lib/ws";
-  import { activePage } from "./lib/stores";
+  import { activePage, connectionState } from "./lib/stores";
 
   import Navbar from "./components/layout/Navbar.svelte";
   import Sidebar from "./components/layout/Sidebar.svelte";
@@ -34,3 +34,9 @@
 
   <Footer />
 </div>
+
+{#if $connectionState !== "connected"}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 text-white">
+    <div class="text-lg font-semibold tracking-wide">Connecting...</div>
+  </div>
+{/if}

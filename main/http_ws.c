@@ -110,6 +110,13 @@ static esp_err_t send_err_response(httpd_req_t *req, int request_id, const char 
     return _ws_send(req, response);
 }
 
+static esp_err_t ws_handle_ping(httpd_req_t *req, int request_id, const cJSON *payload)
+{
+    char response[64];
+    snprintf(response, sizeof(response), "{\"type\":\"pong\"}");
+    return _ws_send(req, response);
+}
+
 static esp_err_t _ws_save_econet(httpd_req_t *req, int request_id, const cJSON *payload)
 {
     const cJSON *settings = cJSON_GetObjectItemCaseSensitive(payload, "settings");
@@ -206,6 +213,7 @@ static esp_err_t _ws_save_wifi(httpd_req_t *req, int request_id, const cJSON *pa
     esp_err_t ret = send_ok_response(req, request_id);
     if (ret == ESP_OK)
     {
+        http_ws_broadcast_json("{\"type\":\"restarting\"}");
         ESP_LOGW(TAG, "Reconfiguring WiFi...");
         TimerHandle_t t = xTimerCreate(
             "wifi_reconfig",
@@ -274,6 +282,7 @@ static esp_err_t _ws_save_wifi_ap(httpd_req_t *req, int request_id, const cJSON 
     esp_err_t ret = send_ok_response(req, request_id);
     if (ret == ESP_OK)
     {
+        http_ws_broadcast_json("{\"type\":\"restarting\"}");
         ESP_LOGW(TAG, "Reconfiguring WiFi...");
         TimerHandle_t t = xTimerCreate(
             "wifi_reconfig",
@@ -318,6 +327,7 @@ static esp_err_t ws_handle_factory_reset(httpd_req_t *req, int request_id, const
     esp_err_t ret = send_ok_response(req, request_id);
     if (ret == ESP_OK)
     {
+        http_ws_broadcast_json("{\"type\":\"restarting\"}");
         ESP_LOGW(TAG, "Factory reset...");
         TimerHandle_t t = xTimerCreate(
             "factory_reset",
@@ -339,6 +349,7 @@ static esp_err_t ws_handle_reboot(httpd_req_t *req, int request_id, const cJSON 
     esp_err_t ret = send_ok_response(req, request_id);
     if (ret == ESP_OK)
     {
+        http_ws_broadcast_json("{\"type\":\"restarting\"}");
         ESP_LOGW(TAG, "Rebooting...");
         TimerHandle_t t = xTimerCreate(
             "reboot_cb",
@@ -416,6 +427,7 @@ static const struct
     const char *type;
     ws_handler_fn handler;
 } ws_routes[] = {
+    {"ping", ws_handle_ping},
     {"reboot", ws_handle_reboot},
     {"factory_reset", ws_handle_factory_reset},
     {"get_wifi", _ws_get_wifi},

@@ -130,13 +130,18 @@ export function mockWsPlugin(): PluginOption {
             );
           }, 3000);
   
-          ws.on("message", (msg_raw: Buffer) => {
-            let msg: ClientMessage = JSON.parse(msg_raw.toString());
+            ws.on("message", (msg_raw: Buffer) => {
+              let msg: ClientMessage = JSON.parse(msg_raw.toString());
   
-            console.log("UI sent →", msg);
+              console.log("UI sent →", msg);
+
+              if (msg.type == "ping") {
+                ws.send(JSON.stringify({ type: "pong" }));
+                return;
+              }
   
-            if (msg.type == "save_wifi") {
-              let response: ServerMessage = {
+              if (msg.type == "save_wifi") {
+                let response: ServerMessage = {
                 type: "response",
                 id: msg.id,
                 error: "No WiFi for you",
